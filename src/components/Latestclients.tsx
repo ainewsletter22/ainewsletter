@@ -58,7 +58,7 @@ export default function LatestClients({ clients = MOCK_CLIENTS }: LatestClientsP
       <div className="bg-white rounded-2xl border border-gray-100 py-4 shadow-sm overflow-x-auto">
         <table className="w-full ">
           <thead>
-            <tr className="border-b border-gray-100">
+            <tr className="border-b border-gray-100 ">
               <th className="py-3 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
               <th className="py-3 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
               <th className="py-3 px-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Phone</th>

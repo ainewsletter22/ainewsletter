@@ -7,7 +7,7 @@ function Logo({ dark = false }: { dark?: boolean }) {
        <img src={logo} alt="" />
       </div>
       <span
-        className={`font-bold text-3xl hidden sm:inline ${
+        className={`font-bold text-xl sm:text-3xl ${
           dark ? "text-white" : "text-gray-600"
         }`}
       >

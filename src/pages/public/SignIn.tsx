@@ -8,10 +8,13 @@ import unview from '../../assets/noTransparency.svg'
 import signInChatBubbleOne from '../../assets/signInChatBubbleOne.png'
 import signInChatBubbleTwo from '../../assets/signInChatBubbleTwo.svg'
 import signInChatBubbleThree from '../../assets/signInChatBubbleThree.svg'
+import { authService } from "../../store/authService";
 
 function SignIn() {
   const navigate = useNavigate();
   const [showPass, setShowPass] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -25,9 +28,20 @@ function SignIn() {
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Sign In Data:', formData);
+    setIsLoading(true);
+    setError("");
+
+    try {
+      await authService.login(formData);
+      navigate("/dashboard");
+    } catch (err: any) {
+      const message = err.response?.data?.message || "Invalid email or password.";
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -43,28 +57,28 @@ function SignIn() {
         
 
         {/* Card */}
-        <div className="w-full relative max-w-lg bg-gray-200 rounded-2xl shadow-2xl px-15 py-15 z-10">
+        <form onSubmit={handleSubmit} className="w-full relative max-w-lg bg-gray-200 rounded-2xl shadow-2xl px-5 md:px-15 py-15 z-10">
 
           
         {/* Bubble One — left middle */}
         <img
           src={signInChatBubbleTwo}
           alt=""
-          className="absolute -left-50 top-1/3 -translate-y-1/2 w-48 pointer-events-none select-none"
+          className="hidden md:block xzabsolute -left-50 top-1/3 -translate-y-1/2 w-48 pointer-events-none select-none"
         />
 
         {/* Bubble Two — top right */}
         <img
           src={signInChatBubbleOne}
           alt=""
-          className="absolute -right-50 -top-4 w-44 pointer-events-none select-none"
+          className="hidden md:block absolute -right-20 lg:-right-50 -top-4 w-44 pointer-events-none select-none"
         />
 
         {/* Bubble Three — bottom right */}
         <img
           src={signInChatBubbleThree}
           alt=""
-          className="absolute -right-30 -bottom-20 w-48 pointer-events-none select-none"
+          className="hidden md:block absolute -right-30 -bottom-20 w-48 pointer-events-none select-none"
         />
 
           {/* WELCOME BACK + title above the card */}
@@ -72,11 +86,19 @@ function SignIn() {
             WELCOME BACK
           </p>
           <div className="flex items-end justify-center mb-6">
-            <h1 className="text-center font-bold text-3xl text-black">
+            <h1 className="text-center font-bold text-xl md:text-3xl text-black">
               Sign in to continue
+              <span className="h-2.5 w-2.5 bg-red-400 rounded-full inline-block ml-1 mb-1" />
             </h1>
-            <span className="h-2.5 w-2.5 bg-red-400 rounded-full inline-block ml-1 mb-1" />
+            
           </div>
+
+          {/* Error Feedback */}
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 border border-red-200 text-red-600 text-xs rounded-lg text-center font-medium">
+              {error}
+            </div>
+          )}
 
           {/* Email */}
           <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -86,10 +108,10 @@ function SignIn() {
             <input
               type="email"
               name="email"
-              placeholder="myemail.com"
+              placeholder="Enter Your Email"
               value={formData.email}
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 pr-10"
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 pr-10 placeholder:text-gray-400"
             />
             <img
               className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4"
@@ -109,7 +131,7 @@ function SignIn() {
               value={formData.password}
               onChange={handleChange}
               placeholder="••••••••••"
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 pr-10"
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 pr-10 placeholder:text-gray-400"
             />
             <button
               type="button"
@@ -125,13 +147,13 @@ function SignIn() {
           </div>
 
           {/* Forgot / Get Started row */}
-          <div className="flex items-center justify-between mb-5">
+          <div className="flex flex-col md:flex-row gap-5 items-center justify-between mb-5">
             <button
               type="button"
               onClick={() => navigate("/forgotPassword")}
               className="flex items-center gap-1.5 text-xs text-red-500 font-semibold"
             >
-              <span className="h-2 w-2 bg-red-500 rounded-full inline-block" />
+              <span className="h-2 bg-red-500 rounded-full inline-block" />
               Forgot Password
             </button>
             <p className="text-xs text-gray-500">
@@ -148,13 +170,13 @@ function SignIn() {
 
           {/* Submit */}
           <button
-            type="button"
-            onClick={handleSubmit}
-            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm"
+            type="submit"
+            disabled={isLoading}
+            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Sign In
+            {isLoading ? "Signing in..." : "Sign In"}
           </button>
-        </div>
+        </form>
       </div>
 
       {/* Footer wave */}

@@ -7,14 +7,55 @@ import user from '../../assets/user.svg'
 import email from '../../assets/email.svg'
 import view from '../../assets/transparency.svg'
 import unview from '../../assets/noTransparency.svg'
+import { authService } from "../../store/authService";
 
 function SignUp() {
   const navigate = useNavigate();
   const [showPass, setShowPass] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    terms: false
+  });
 
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.terms) {
+      setError("You must agree to the Terms & Conditions.");
+      return;
+    }
+
+    setIsLoading(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const res = await authService.register(formData);
+      setSuccess(res.data.message || "Registration successful! Please check your email.");
+      // Optionally clear form
+      setFormData({ firstName: '', lastName: '', email: '', password: '', terms: false });
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Registration failed. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
-    <div className="h-screen bg-blue-50 flex flex-col">
+    <div className="min-h-screen bg-blue-50 flex flex-col">
       <header className="px-8 py-5">
         <Logo />
       </header>
@@ -27,11 +68,23 @@ function SignUp() {
           </div>
  
           {/* Right: form */}
-          <div className="flex-1 max-w-md">
+          <form onSubmit={handleSubmit} className="flex-1 max-w-md">
             <h1 className="text-2xl font-bold text-gray-900 mb-6">
               Create Your Account
             </h1>
  
+            {/* Notifications */}
+            {error && (
+              <div className="mb-4 p-3 bg-red-100 border border-red-200 text-red-600 text-xs rounded-lg text-center font-medium">
+                {error}
+              </div>
+            )}
+            {success && (
+              <div className="mb-4 p-3 bg-green-100 border border-green-200 text-green-600 text-xs rounded-lg text-center font-medium">
+                {success}
+              </div>
+            )}
+
             {/* First / Last */}
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
@@ -41,6 +94,9 @@ function SignUp() {
                 <div className="relative">
                   <input
                     type="text"
+                    name="firstName"
+                    value={formData.firstName}
+                    onChange={handleChange}
                     placeholder="Name"
                     className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 pr-8"
                   />
@@ -54,6 +110,9 @@ function SignUp() {
                 <div className="relative">
                   <input
                     type="text"
+                    name="lastName"
+                    value={formData.lastName}
+                    onChange={handleChange}
                     placeholder="Last Name"
                     className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 pr-8"
                   />
@@ -69,6 +128,9 @@ function SignUp() {
             <div className="relative mb-4">
               <input
                 type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
                 placeholder="Myemail.com"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 pr-8"
               />
@@ -82,10 +144,14 @@ function SignUp() {
             <div className="relative mb-4">
               <input
                 type={showPass ? "text" : "password"}
-                defaultValue="password123"
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                placeholder="••••••••"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 pr-8"
               />
               <button
+                type="button"
                 onClick={() => setShowPass(!showPass)}
                 className="absolute right-0 top-1/2 -translate-y-1/2 text-gray-400 h-auto w-5"
               >
@@ -99,7 +165,13 @@ function SignUp() {
  
             {/* Terms */}
             <label className="flex items-start gap-2 text-xs text-gray-500 mb-5 cursor-pointer">
-              <input type="checkbox" className="mt-0.5 rounded" />
+              <input 
+                type="checkbox" 
+                name="terms"
+                checked={formData.terms}
+                onChange={handleChange}
+                className="mt-0.5 rounded" 
+              />
               <span>
                 I agree to the{" "}
                 <span className="text-blue-500 hover:underline cursor-pointer">
@@ -114,8 +186,12 @@ function SignUp() {
             </label>
  
             <div className="flex flex-col md:flex-row items-center">
-              <button className="w-1/2 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm mb-3">
-                Create Account
+              <button 
+                type="submit"
+                disabled={isLoading}
+                className="w-1/2 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm mb-3 disabled:opacity-50"
+              >
+                {isLoading ? "Creating..." : "Create Account"}
               </button>
   
               <p className="inline-block w-1/2 text-center text-xs text-gray-500">
@@ -128,7 +204,7 @@ function SignUp() {
                 </button>
               </p>
             </div>
-          </div>
+          </form>
         </div>
       </div>
  

@@ -6,6 +6,7 @@ import email from '../../assets/email.svg';
 import view from '../../assets/transparency.svg';
 import unview from '../../assets/noTransparency.svg';
 import forgotImg from '../../assets/forgotPasswordHero.svg'; // the right-hand promo image (same across steps 1–3)
+import { authService } from "../../store/authService";
 
 // Lock icon — reused across all steps
 function LockIcon() {
@@ -33,8 +34,49 @@ function ForgotPassword() {
   const [emailVal, setEmailVal] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const isLastStep = step === 4;
+
+  const handleStartReset = async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      await authService.forgotPassword(emailVal);
+      setStep(2);
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to initiate reset.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    try {
+      await authService.forgotPassword(emailVal);
+      alert("Reset link resent!");
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
+
+  const handleFinalReset = async () => {
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setIsLoading(true);
+    try {
+      // Note: Backend requires a token here. This usually comes from the URL.
+      // We will need a ResetPassword component that takes token from useParams()
+      setStep(4);
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to reset password.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="h-screen bg-blue-50 flex flex-col">
@@ -86,6 +128,8 @@ function ForgotPassword() {
                       we'll send you reset instructions
                     </p>
 
+                    {error && <div className="text-red-500 text-xs text-center mb-4">{error}</div>}
+
                     <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
                     <div className="relative mb-6">
                       <input
@@ -104,10 +148,11 @@ function ForgotPassword() {
 
                     <div className="flex gap-3">
                       <button
-                        onClick={() => setStep(2)}
-                        className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm"
+                        onClick={handleStartReset}
+                        disabled={isLoading}
+                        className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm disabled:opacity-50"
                       >
-                        Reset Password
+                        {isLoading ? "Sending..." : "Reset Password"}
                       </button>
                       <button
                         onClick={() => navigate('/signIn')}
@@ -130,7 +175,7 @@ function ForgotPassword() {
                     </p>
 
                     <button
-                      onClick={() => setStep(3)}
+                      onClick={handleResend}
                       className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm mb-3"
                     >
                       Didn't receive the email, Click To Resend
@@ -153,6 +198,8 @@ function ForgotPassword() {
                     <p className="text-center text-xs text-gray-400 mb-5 leading-relaxed">
                       Your New Password must be different to<br />your previous passwords.
                     </p>
+
+                    {error && <div className="text-red-500 text-xs text-center mb-4">{error}</div>}
 
                     {/* Password */}
                     <div className="flex justify-between items-center mb-1">
@@ -199,10 +246,11 @@ function ForgotPassword() {
 
                     <div className="flex gap-3">
                       <button
-                        onClick={() => setStep(4)}
-                        className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm"
+                        onClick={handleFinalReset}
+                        disabled={isLoading}
+                        className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm disabled:opacity-50"
                       >
-                        Reset Password
+                        {isLoading ? "Updating..." : "Reset Password"}
                       </button>
                       <button
                         onClick={() => navigate('/signIn')}

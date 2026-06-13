@@ -3,6 +3,7 @@ import type { ClientData } from "../../components/Clientcard";
 import DashboardHeader from "../../components/Dashboardheader";
 import ClientCard from "../../components/Clientcard";
 import logo from "../../assets/mainLogoNBG.png";
+import { clientService } from "../../store/clientService";
 
 // ── Mock data ──────────────────────────────────────────────────────────────────
 
@@ -143,11 +144,13 @@ function ResultsToolbar({
   selectedIds,
   onSelectAll,
   allSelected,
+  onAddSelected,
 }: {
   count: number;
   selectedIds: string[];
   onSelectAll: () => void;
   allSelected: boolean;
+  onAddSelected: () => void;
 }) {
   return (
     <div className="flex flex-col md:flex-row items-start md:items-center justify-between py-3 gap-4 md:gap-0">
@@ -165,7 +168,10 @@ function ResultsToolbar({
 
       <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
         {selectedIds.length > 0 && (
-          <button className="flex-1 md:flex-none text-xs font-semibold text-white bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-lg transition-colors text-center">
+          <button
+            onClick={onAddSelected}
+            className="flex-1 md:flex-none text-xs font-semibold text-white bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-lg transition-colors text-center"
+          >
             ADD SELECTED CLIENTS TO MANAGE CLIENTS
           </button>
         )}
@@ -240,22 +246,20 @@ export default function FindClients() {
   const [currentPage, setCurrentPage] = useState(1);
 
   // Simulate search
-  const handleSearch = () => {
+  const handleSearch = async () => {
     if (!niche && !country) return;
     setPageState("loading");
     setSelectedIds([]);
     setCurrentPage(1);
 
-    setTimeout(() => {
-      // Simulate: empty result if niche === "xyz"
-      if (niche.toLowerCase() === "xyz") {
-        setClients([]);
-        setPageState("empty");
-      } else {
-        setClients(MOCK_CLIENTS);
-        setPageState("results");
-      }
-    }, 2000);
+    try {
+      const data = await clientService.searchClients(niche, country, state);
+      setClients(data);
+      setPageState(data.length > 0 ? "results" : "empty");
+    } catch (error) {
+      console.error("Search failed:", error);
+      setPageState("idle");
+    }
   };
 
   const handleSelect = (id: string) => {
@@ -269,6 +273,16 @@ export default function FindClients() {
       setSelectedIds([]);
     } else {
       setSelectedIds(clients.map((c) => c.id));
+    }
+  };
+
+  const handleAddSelected = async () => {
+    try {
+      await clientService.addClientsToManage(selectedIds);
+      alert(`${selectedIds.length} clients added successfully!`);
+      setSelectedIds([]);
+    } catch (error) {
+      console.error("Failed to add clients:", error);
     }
   };
 
@@ -409,6 +423,7 @@ export default function FindClients() {
               selectedIds={selectedIds}
               onSelectAll={handleSelectAll}
               allSelected={selectedIds.length === clients.length}
+              onAddSelected={handleAddSelected}
             />
 
             {/* Client cards grid */}
