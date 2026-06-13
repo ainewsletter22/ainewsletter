@@ -8,7 +8,7 @@ interface Props {
   onCreateBlank: () => void;
 }
 
-export function TemplateMockup({ color, index }: { color: string; index: number }) {
+export function TemplateMockup({  index }: { color: string; index: number }) {
   const layouts = [
     // Layout 0: Card 2 (Large top banner, bold title, 5 faded lines, footer bar)
     <svg key={0} viewBox="0 0 120 140" className="w-full h-full" xmlns="http://www.w3.org/2000/svg">

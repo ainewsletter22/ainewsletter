@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import type { ComposeForm, ConfirmForm } from "../../types/Types";
 import "react-quill-new/dist/quill.snow.css";
 
@@ -16,13 +16,11 @@ interface Props {
 // ─── Rich Text Editor (Quill wrapper) ────────────────────────────────────────
 
 function RichEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const quillRef = useRef<unknown>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
-    import("react-quill-new").then(({ default: ReactQuill }) => {
+    import("react-quill-new").then(() => {
       if (!isMounted) return;
       // Store for type access — rendered via state
       setMounted(true);
@@ -101,8 +99,10 @@ function AIWriterPopup({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState("A.I Writer");
   const [prompt, setPrompt] = useState("");
 
+  console.log(setMode);
+
   return (
-    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-[560px] bg-white rounded-2xl shadow-2xl border border-gray-100 p-3 z-10">
+    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-140 bg-white rounded-2xl shadow-2xl border border-gray-100 p-3 z-10">
       <button onClick={onClose} className="absolute -top-2 -right-2 w-6 h-6 bg-white border border-gray-200 rounded-full text-gray-500 text-xs flex items-center justify-center hover:bg-gray-50">✕</button>
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
@@ -131,7 +131,7 @@ function AIWriterPopup({ onClose }: { onClose: () => void }) {
 // ─── Compose Step ─────────────────────────────────────────────────────────────
 
 function ComposeStep({
-  form, onChange, onClose, onNext,
+  form, onChange, onNext,
 }: {
   form: ComposeForm;
   onChange: <K extends keyof ComposeForm>(k: K, v: ComposeForm[K]) => void;

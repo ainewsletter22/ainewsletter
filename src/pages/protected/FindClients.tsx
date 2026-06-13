@@ -5,69 +5,6 @@ import ClientCard from "../../components/Clientcard";
 import logo from "../../assets/mainLogoNBG.png";
 import { clientService } from "../../store/clientService";
 
-// ── Mock data ──────────────────────────────────────────────────────────────────
-
-const MOCK_CLIENTS: ClientData[] = [
- {
-    id: "1", name: "Restaurant Watergang", claimed: true, rating: 4.9,
-    email: "michelle.rivera@example.com", telephone: "020 786 6246",
-    website: "restaurantwatergang.nl",
-    address: "Weteringstraat 41, 1017 SM Amsterdam, Netherlands",
-    instagram: "@restaurantwatergang", twitter: "@restgangng",
-    facebook: "@restaurantwatergang", linkedin: "@restaurantwatergang",
-    yelp: "@restaurantwatergang", gmbPhotos: "10+ Photos",
-    reviews: 116, businessStatus: "Operational", leadScore: 82,
-  },
-  {
-    id: "2", name: "Barone LLC.", claimed: true, rating: 4.9,
-    email: "@NONE", telephone: "020 786 6246", website: "@NONE",
-    address: "Weteringstraat 41, 1017 SM Amsterdam, Netherlands",
-    instagram: "@restaurantwatergang", twitter: "@NONE",
-    facebook: "@NONE", linkedin: "@restaurantwatergang",
-    yelp: "@restaurantwatergang", gmbPhotos: "10+ Photos",
-    reviews: 16, businessStatus: "Operational", leadScore: 82,
-  },
-  {
-    id: "3", name: "Abstergo Ltd.", claimed: false, rating: 4.5,
-    email: "No email", telephone: "020 786 6246",
-    website: "restaurantwatergang.nl",
-    address: "Weteringstraat 41, 1017 SM Amsterdam, Netherlands",
-    instagram: "@restaurantwatergang", twitter: "@NONE",
-    facebook: "@restaurantwatergang", linkedin: "@restaurantwatergang",
-    yelp: "@restaurantwatergang", gmbPhotos: "10+ Photos",
-    reviews: 116, businessStatus: "Operational", leadScore: 64,
-  },
-  {
-    id: "4", name: "Barone LLC.", claimed: false, rating: 4.5,
-    email: "@NONE", telephone: "020 786 6246",
-    website: "restaurantwatergang.nl",
-    address: "Weteringstraat 41, 1017 SM Amsterdam, Netherlands",
-    instagram: "@restaurantwatergang", twitter: "@NONE",
-    facebook: "@restaurantwatergang", linkedin: "@restaurantwatergang",
-    yelp: "@restaurantwatergang", gmbPhotos: "10+ Photos",
-    reviews: 116, businessStatus: "Operational", leadScore: 40,
-  },
-  {
-    id: "5", name: "Dunder Mifflin", claimed: true, rating: 4.7,
-    email: "info@dundermifflin.com", telephone: "020 786 1234",
-    website: "dundermifflin.com",
-    address: "1725 Slough Ave, Scranton, PA, USA",
-    instagram: "@dundermifflin", twitter: "@dundermifflin",
-    facebook: "@dundermifflin", linkedin: "@dundermifflin",
-    yelp: "@dundermifflin", gmbPhotos: "5+ Photos",
-    reviews: 88, businessStatus: "Operational", leadScore: 75,
-  },
-  {
-    id: "6", name: "Massive Dynamic", claimed: false, rating: 4.2,
-    email: "@NONE", telephone: "020 786 9999",
-    website: "@NONE",
-    address: "42 West 42nd St, New York, NY, USA",
-    instagram: "@massivedynamic", twitter: "@NONE",
-    facebook: "@NONE", linkedin: "@massivedynamic",
-    yelp: "@massivedynamic", gmbPhotos: "10+ Photos",
-    reviews: 34, businessStatus: "Operational", leadScore: 55,
-  },
-];
 
 // ── Page state type ────────────────────────────────────────────────────────────
 
