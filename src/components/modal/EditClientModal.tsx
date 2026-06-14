@@ -47,10 +47,14 @@ export default function EditClientModal({ client, isOpen, onClose, onSave }: Edi
     setLoading(true);
     try {
       // Map frontend keys to backend snake_case
+      // Using "Kitchen Sink" approach to satisfy inconsistent backend naming
       const payload = {
+        display_name: formData.businessName,
         business_name: formData.businessName,
+        email_1: formData.email,
         email: formData.email,
         phone: formData.phone,
+        site: formData.website,
         website: formData.website,
         google_maps_url: formData.gmb,
         facebook_url: formData.facebook,
