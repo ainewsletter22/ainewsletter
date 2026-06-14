@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import bot from '../../assets/botHead.png';
 import aiPortrait from '../../assets/aiPortrait.png';
 import aiWizard from '../../assets/aiWizard.png';
 import logoBAW from '../../assets/logoBAW.png';
+import { clientService } from "../../store/clientService";
 
 interface GoalModalProps {
   isOpen: boolean;
@@ -11,29 +12,39 @@ interface GoalModalProps {
   onDashboard: () => void;
 }
 
-const goals = [
-  {
-    id: "client-finder",
-    title: "Ai Client Finder",
-    description: "AI identifies potential clients through data analysis & insights.",
-    icon: aiPortrait,
-  },
-  {
-    id: "email-newsletter",
-    title: "Ai Email Newsletter",
-    description: "Enhance engagement by sending tailored and automated emails powered by AI.",
-    icon: logoBAW,
-  },
-  {
-    id: "wizard-widget",
-    title: "Ai Wizard Widget",
-    description: "Harness the power of Ai Wizard, your smart assistant!",
-    icon: aiWizard,
-  },
-];
-
 export default function GoalModal({ isOpen, onClose, onContinue, onDashboard }: GoalModalProps) {
-  const [selected, setSelected] = useState("client-finder");
+  const [selected, setSelected] = useState("");
+  const [backendGoals, setBackendGoals] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      clientService.getOnboardingMeta().then((data) => {
+        // Map backend goals to UI structure
+        const mapped = data.goals.map((g: any) => {
+          const name = g.name.toLowerCase();
+          let icon = aiWizard; // Default fallback
+          let desc = g.description || "Harness the power of AI.";
+
+          if (name.includes("finder") || name.includes("client")) {
+            icon = aiPortrait;
+            desc = "AI identifies potential clients through data analysis.";
+          } else if (name.includes("newsletter") || name.includes("email")) {
+            icon = logoBAW;
+            desc = "Enhance engagement with automated AI emails.";
+          }
+
+          return {
+            id: g.id.toString(),
+            title: g.name,
+            description: desc,
+            icon: icon
+          };
+        });
+        setBackendGoals(mapped);
+        if (mapped.length > 0) setSelected(mapped[0].id);
+      });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -69,7 +80,7 @@ export default function GoalModal({ isOpen, onClose, onContinue, onDashboard }: 
 
         {/* Goal cards */}
         <div className="grid grid-cols-3 gap-3 mb-8">
-          {goals.map((goal) => (
+          {backendGoals.map((goal) => (
             <button
               key={goal.id}
               onClick={() => setSelected(goal.id)}

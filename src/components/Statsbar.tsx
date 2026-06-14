@@ -1,31 +1,31 @@
-import people from "../assets/peopleYellow.png";
-import contact from "../assets/contactIcon.png";
-import logo from "../assets/mainLogo.png";
 import StatCard from "./Statcard";
-const stats = [
-  {
-    icon: people,
-    value: "3,550",
-    label: "Clients Generated",
-  },
-  {
-    icon: contact,
-    value: "1,780",
-    label: "Clients Contacted",
-  },
-  {
-    icon: logo,
-    value: "148,800",
-    label: "Total Emails Sent",
-  },
-];
+import clientsIcon from "../assets/clientsIcon.svg";
+import sendIcon from "../assets/sendIcon.png";
+import dashboardIcon from "../assets/dashboardIcon.png";
 
-export default function StatsBar() {
+interface StatsBarProps {
+  totalClients: number;
+  contactedClients: number;
+}
+
+export default function StatsBar({ totalClients, contactedClients }: StatsBarProps) {
   return (
-    <div className="flex flex-col md:flex-row gap-4 w-full">
-      {stats.map((stat) => (
-        <StatCard key={stat.label} icon={stat.icon} value={stat.value} label={stat.label} />
-      ))}
+    <div className="flex flex-col md:flex-row gap-6">
+      <StatCard
+        icon={clientsIcon}
+        value={totalClients.toString()}
+        label="Total Clients"
+      />
+      <StatCard
+        icon={sendIcon}
+        value={contactedClients.toString()}
+        label="Contacted Clients"
+      />
+      <StatCard
+        icon={dashboardIcon}
+        value="0"
+        label="Upcoming Tasks"
+      />
     </div>
   );
 }

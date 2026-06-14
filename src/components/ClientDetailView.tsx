@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import clientBadge from "../assets/clientBadge.svg";
 import clientBadgeDark from "../assets/clientBadgeDark.svg";
 import emailBadge from "../assets/emailBadge.svg";
@@ -8,6 +8,9 @@ import exportContact from "../assets/exportContact.svg";
 import importContact from "../assets/importContact.svg";
 import searchIcon from "../assets/searchIconBAW.svg";
 import trashIcon from "../assets/trashIcon.svg";
+import editIcon from "../assets/editIcon.svg"; // Assuming this asset exists
+import { clientService } from "../store/clientService";
+import EditClientModal from "./modal/EditClientModal";
 
 // type ImportFlow = "idle" | "step1" | "file" | "paste" | "success";
 
@@ -34,7 +37,7 @@ interface Client {
 }
 
 function ClientDetailView({
-  folder, clients, onBack, onAddClient, onImport, onDeleteClient,
+  folder, clients, onBack, onAddClient, onImport, onDeleteClient, onUpdateClient,
 }: {
   folder: Folder;
   clients: Client[];
@@ -42,11 +45,40 @@ function ClientDetailView({
   onAddClient: () => void;
   onImport: () => void;
   onDeleteClient: (id: number) => void;
+  onUpdateClient: (id: number, payload: any) => Promise<void>;
 }) {
   const [activeTab, setActiveTab] = useState<"clients" | "emails">("clients");
   const [search, setSearch] = useState("");
   const [show, setShow] = useState(10);
   const [page, setPage] = useState(1);
+  const [showExportOptions, setShowExportOptions] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) setShowExportOptions(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleExport = async (format: 'xlsx' | 'csv' | 'xml' | 'json') => {
+    try {
+      const data = await clientService.exportClients(format);
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `clients_export_${folder.name}.${format}`);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+      setShowExportOptions(false);
+    } catch (error) {
+      console.error("Export failed", error);
+      alert("Failed to export contacts. Please try again.");
+    }
+  };
  
   const emailsSentCount = clients.filter(c => c.group === "Contacted").length;
   const filtered = clients.filter(c =>
@@ -103,9 +135,27 @@ function ClientDetailView({
               <span className="text-sm font-medium text-gray-700">Emails Sent</span>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => {}} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-4 rounded-lg hover:bg-gray-50 transition-colors">
-                    <img src={exportContact} className="w-5 h-5" alt="Export Contacts" /> EXPORT CONTACTS
-              </button>
+              <div className="relative" ref={exportRef}>
+                <button 
+                  onClick={() => setShowExportOptions(!showExportOptions)}
+                  className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-4 rounded-lg hover:bg-gray-50 transition-colors uppercase"
+                >
+                  <img src={exportContact} className="w-5 h-5" alt="Export Contacts" /> EXPORT CONTACTS
+                </button>
+                {showExportOptions && (
+                  <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-2">
+                    {(['xlsx', 'csv', 'xml', 'json'] as const).map(fmt => (
+                      <button
+                        key={fmt}
+                        onClick={() => handleExport(fmt)}
+                        className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors uppercase font-bold"
+                      >
+                        Download .{fmt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button onClick={onImport} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-4 rounded-lg hover:bg-gray-50 transition-colors">
                 <img src={importContact} className="w-5 h-5" alt="Import Contact" /> IMPORT CONTACT
               </button>
@@ -145,14 +195,32 @@ function ClientDetailView({
                     <td className="px-3 py-5 text-sm text-gray-600 whitespace-nowrap">{c.email}</td>
                     <td className="px-3 py-5 text-sm text-blue-600 whitespace-nowrap">{c.phone ?? "—"}</td>
                     <td className="px-3 py-5 text-sm text-blue-600 whitespace-nowrap">{c.website ?? "—"}</td>
-                    {["GMB", "FB", "X", "IG", "Yelp"].map((s, si) => (
-                      <td key={s} className="px-3 py-5">
-                        <button className={`text-xs font-medium px-5 py-2 rounded-lg ${["bg-[rgba(219,142,17,0.18)] text-[#DB8E11]", "bg-[rgba(33,79,212,0.18)] text-[#214FD4]", "bg-[rgba(105,105,105,0.18)] text-[#696969]", "bg-[rgba(222,89,107,0.18)] text-[#DE596B]", "bg-[rgba(250,63,63,0.18)] text-[#FA3F3F]"][si]}`}>
-                          Visit
-                        </button>
-                      </td>
-                    ))}
-                    <td className="px-3 py-5">
+                    {[
+                      { val: c.gmb, color: "bg-[rgba(219,142,17,0.18)] text-[#DB8E11]" },
+                      { val: c.facebook, color: "bg-[rgba(33,79,212,0.18)] text-[#214FD4]" },
+                      { val: c.twitter, color: "bg-[rgba(105,105,105,0.18)] text-[#696969]" },
+                      { val: c.instagram, color: "bg-[rgba(222,89,107,0.18)] text-[#DE596B]" },
+                      { val: c.yelp, color: "bg-[rgba(250,63,63,0.18)] text-[#FA3F3F]" }
+                    ].map((platform, idx) => {
+                      const hasUrl = platform.val && platform.val !== "@NONE" && platform.val !== "Not found" && platform.val !== "null" && platform.val !== "";
+                      return (
+                        <td key={idx} className="px-3 py-5">
+                          <button
+                            disabled={!hasUrl}
+                            onClick={() => hasUrl && window.open(platform.val?.startsWith("http") ? platform.val : `https://${platform.val}`, "_blank")}
+                            className={`text-xs font-medium px-5 py-2 rounded-lg transition-colors ${hasUrl ? platform.color + " hover:opacity-80" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
+                          >
+                            Visit
+                          </button>
+                        </td>
+                      );
+                    })}
+                    <td className="px-3 py-5 flex items-center gap-1">
+                      <button 
+                        onClick={() => setEditingClient(c)} 
+                        className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-500 transition-colors" 
+                        title="Edit"
+                      ><img src={editIcon} alt="edit" className="w-5 h-5" /></button>
                       <button onClick={() => onDeleteClient(c.id)} className="p-1.5 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors" title="Delete"><img src={trashIcon} alt="trash" /></button>
                     </td>
                   </tr>
@@ -201,6 +269,15 @@ function ClientDetailView({
           </div>
         </div>
       </div>
+
+      {editingClient && (
+        <EditClientModal
+          isOpen={!!editingClient}
+          client={editingClient}
+          onClose={() => setEditingClient(null)}
+          onSave={onUpdateClient}
+        />
+      )}
     </div>
   );
 }

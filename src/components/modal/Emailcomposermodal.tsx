@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import type { ComposeForm, ConfirmForm } from "../../types/Types";
+import { useAuthStore } from "../../store/useAuthStore";
 import "react-quill-new/dist/quill.snow.css";
 
 // ─── Quill dynamic import ─────────────────────────────────────────────────────
@@ -360,10 +361,11 @@ function ConfirmStep({
 export function EmailComposerModal({ onClose, prefilled }: Props) {
   const [step, setStep] = useState<ComposerStep>("compose");
   const [sent, setSent] = useState(false);
+  const user = useAuthStore((state) => state.user);
 
   const [compose, setCompose] = useState<ComposeForm>({
-    name: "Jamson rason",
-    from: "Jamsonrason01@gmail.com",
+    name: user ? `${user.first_name} ${user.last_name}` : "User",
+    from: user?.email || "",
     to: "Balompiê Café",
     subject: prefilled?.subject ?? "Website Design Proposal",
     preview: prefilled?.subject ? `${prefilled.subject} — read more inside` : "My Summer Slash Design Package Is Here And You'reInvited To Join!",
@@ -371,7 +373,7 @@ export function EmailComposerModal({ onClose, prefilled }: Props) {
   });
 
   const [confirm, setConfirm] = useState<ConfirmForm>({
-    testEmail: "Jamsonrason01@gmail.com",
+    testEmail: user?.email || "",
     delivery: "later",
     scheduleDate: "2023-05-16",
     scheduleTime: "23:39",

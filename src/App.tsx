@@ -7,6 +7,7 @@ import FindClients from './pages/protected/FindClients';
 import ManageClients from './pages/protected/ManageClients';
 import SendAINewsletterPage from './pages/protected/Sendainewsletterpage';
 import ConfirmEmail from './pages/protected/ConfirmEmail';
+import SearchHistory from './pages/protected/SearchHistory';
 import ResetPassword from './pages/public/ResetPassword';
 import ProtectedRoute from './components/ProtectedRoute';
 import PublicRoute from './components/PublicRoute';
@@ -31,6 +32,7 @@ function App() {
           <Route path="/find-clients" element={<FindClients />} />
           <Route path="/manage-clients" element={<ManageClients />} />
           <Route path="/news-letter" element={<SendAINewsletterPage />} />
+          <Route path="/search-history" element={<SearchHistory />} />
         </Route>
 
         {/* Redirect root to dashboard (Guards will handle guest vs user) */}

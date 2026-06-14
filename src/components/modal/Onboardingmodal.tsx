@@ -1,15 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { clientService } from "../../store/clientService";
 
 interface OnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
   onContinue: () => void;
 }
-
-const usageOptions = ["Business", "Personal", "Agency", "Freelancer"];
-const companyTypes = ["Startup", "SME", "Enterprise", "Non-Profit", "Other"];
-const roleOptions = ["Owner", "Manager", "Marketing", "Sales", "Developer", "Other"];
-const companySizes = ["1–10", "11–50", "51–200", "201–500", "500+"];
 
 function ChevronIcon() {
   return (
@@ -29,7 +25,7 @@ function SelectField({
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: string[];
+  options: { id: number | string; name: string }[];
   placeholder?: string;
 }) {
   return (
@@ -47,8 +43,8 @@ function SelectField({
             </option>
           )}
           {options.map((o) => (
-            <option key={o} value={o}>
-              {o}
+            <option key={o.id} value={o.id}>
+              {o.name}
             </option>
           ))}
         </select>
@@ -61,10 +57,35 @@ function SelectField({
 }
 
 export default function OnboardingModal({ isOpen, onClose, onContinue }: OnboardingModalProps) {
-  const [usage, setUsage] = useState("Business");
+  const [usage, setUsage] = useState("");
   const [companyType, setCompanyType] = useState("");
   const [role, setRole] = useState("");
-  const [companySize, setCompanySize] = useState("1–10");
+  const [companySize, setCompanySize] = useState("");
+
+  const [meta, setMeta] = useState<{
+    purposes: any[];
+    kinds: any[];
+    sizes: any[];
+    roles: any[];
+  }>({
+    purposes: [],
+    kinds: [],
+    sizes: [],
+    roles: [],
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      clientService.getOnboardingMeta().then((data) => {
+        setMeta({
+          purposes: data.purposes,
+          kinds: data.kinds,
+          sizes: data.sizes,
+          roles: data.roles,
+        });
+      });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -83,14 +104,15 @@ export default function OnboardingModal({ isOpen, onClose, onContinue }: Onboard
           label="What will you be using Ai Newsletter for?"
           value={usage}
           onChange={setUsage}
-          options={usageOptions}
+          options={meta.purposes}
+          placeholder="Select purpose"
         />
 
         <SelectField
           label="What kind of company is it?"
           value={companyType}
           onChange={setCompanyType}
-          options={companyTypes}
+          options={meta.kinds}
           placeholder="Select a company type"
         />
 
@@ -98,7 +120,7 @@ export default function OnboardingModal({ isOpen, onClose, onContinue }: Onboard
           label="What is your role there"
           value={role}
           onChange={setRole}
-          options={roleOptions}
+          options={meta.roles}
           placeholder="Select your role"
         />
 
@@ -106,7 +128,8 @@ export default function OnboardingModal({ isOpen, onClose, onContinue }: Onboard
           label="How big is the company"
           value={companySize}
           onChange={setCompanySize}
-          options={companySizes}
+          options={meta.sizes}
+          placeholder="Select size"
         />
 
         {/* Actions */}

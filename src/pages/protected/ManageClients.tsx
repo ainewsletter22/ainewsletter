@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ClientDetailView from "../../components/ClientDetailView";
 import FolderTable from "../../components/FolderTable";
 import AddFolderModal from "../../components/modal/AddFolderModal";
@@ -8,6 +8,7 @@ import ImportStepFile from "../../components/modal/ImportStepFile";
 import ImportStepPaste from "../../components/modal/ImportStepPaste";
 import ImportSuccessModal from "../../components/modal/ImportSuccessModal";
 import DashboardHeader from "../../components/Dashboardheader";
+import { clientService } from "../../store/clientService";
 
 interface Folder {
   id: number;
@@ -32,66 +33,156 @@ interface Client {
 }
 
 type ImportFlow = "idle" | "step1" | "file" | "paste" | "success";
-
-const initialFolders: Folder[] = [
-  { id: 1, name: "Plumbers in pittsburgh USA", totalClients: 1, createdDate: "01/07/20" },
-  { id: 2, name: "[FB] Plumbers pittsburgh USA", totalClients: 55, createdDate: "01/07/20" },
-  { id: 3, name: "Coffee shops in Boulder CO", totalClients: 55, createdDate: "01/07/20" },
-  { id: 4, name: "[FB] Plumbers pittsburgh USA", totalClients: 55, createdDate: "01/07/20" },
-  { id: 5, name: "Plumbers in pittsburgh USA", totalClients: 55, createdDate: "01/07/20" },
-  { id: 6, name: "[FB] Plumbers pittsburgh USA", totalClients: 55, createdDate: "01/07/20" },
-  { id: 7, name: "Coffee shops in Boulder CO", totalClients: 55, createdDate: "01/07/20" },
-  { id: 8, name: "[FB] Plumbers pittsburgh USA", totalClients: 55, createdDate: "01/07/20" },
-  { id: 9, name: "Plumbers in pittsburgh USA", totalClients: 1, createdDate: "01/07/20" },
-  { id: 10, name: "[FB] Plumbers pittsburgh USA", totalClients: 55, createdDate: "01/07/20" },
-  { id: 11, name: "Coffee shops in Boulder CO", totalClients: 55, createdDate: "01/07/20" },
-  { id: 12, name: "[FB] Plumbers pittsburgh USA", totalClients: 55, createdDate: "01/07/20" },
-  { id: 13, name: "Plumbers in pittsburgh USA", totalClients: 55, createdDate: "01/07/20" },
-  { id: 14, name: "[FB] Plumbers pittsburgh USA", totalClients: 55, createdDate: "01/07/20" },
-  { id: 15, name: "Coffee shops in Boulder CO", totalClients: 55, createdDate: "01/07/20" },
-  { id: 16, name: "[FB] Plumbers pittsburgh USA", totalClients: 55, createdDate: "01/07/20" },
-];
- 
-const initialClients: Client[] = [
-  { id: 1, businessName: "Acme Co.", email: "willie.jennings@example.com", phone: "(+1) 234 5678 21", website: "www.inforgrwoth.com", group: "Not Contacted", emailsSent: 0 },
-  { id: 2, businessName: "Big Kahuna Burger Ltd.", email: "alma.lawson@example.com", phone: "(+1) 234 5678 21", website: "www.inforgrwoth.com", group: "Contacted", emailsSent: 0 },
-  { id: 3, businessName: "Beasley Plumbing", email: "servicemgr@beasleyplumbing.com", group: "Not Contacted", emailsSent: 0 },
-  { id: 4, businessName: "Beasley Plumbing", email: "servicemgr@beasleyplumbing.com", group: "Contacted", emailsSent: 0 },
-  { id: 5, businessName: "Beasley Plumbing", email: "servicemgr@beasleyplumbing.com", group: "Not Contacted", emailsSent: 0 },
-  { id: 6, businessName: "Beasley Plumbing", email: "servicemgr@beasleyplumbing.com", group: "Contacted", emailsSent: 0 },
-];
  
 export default function ManageClients() {
-  const [folders, setFolders] = useState<Folder[]>(initialFolders);
-  const [clients, setClients] = useState<Client[]>(initialClients);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<Folder | null>(null);
  
   // Modals
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [showAddClient, setShowAddClient] = useState(false);
+  const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
   const [importFlow, setImportFlow] = useState<ImportFlow>("idle");
   const [importCount, setImportCount] = useState(0);
  
-  const handleAddFolder = (name: string) => {
-    setFolders(prev => [...prev, { id: Date.now(), name, totalClients: 0, createdDate: new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" }) }]);
-  };
- 
-  const handleDeleteFolder = (id: number) => {
-    setFolders(prev => prev.filter(f => f.id !== id));
-    if (selectedFolder?.id === id) setSelectedFolder(null);
-  };
- 
-  const handleAddClient = (c: Partial<Client>) => {
-    const newClient: Client = { id: Date.now(), businessName: c.businessName!, email: c.email!, phone: c.phone, website: c.website, group: "Not Contacted", emailsSent: 0 };
-    setClients(prev => [...prev, newClient]);
+  useEffect(() => {
+    fetchFolders();
+  }, []);
+
+  useEffect(() => {
     if (selectedFolder) {
-      setFolders(prev => prev.map(f => f.id === selectedFolder.id ? { ...f, totalClients: f.totalClients + 1 } : f));
-      setSelectedFolder(f => f ? { ...f, totalClients: f.totalClients + 1 } : f);
+      fetchClients(selectedFolder.id);
+    }
+  }, [selectedFolder]);
+
+  const fetchFolders = async () => {
+    try {
+      // Fetch categories and stats (counts) in parallel
+      const [categories, stats] = await Promise.all([
+        clientService.getCategories(),
+        clientService.getSavedClients() // Hits /clients/list which returns grouped counts
+      ]);
+
+      console.log("DEBUG: Raw Categories:", categories);
+      console.log("DEBUG: Raw Stats from /clients/list:", stats);
+
+      const mapped = categories.map((f: any) => {
+        // The stats array is actually a list of clients. 
+        // We count how many clients have a client_cat_id matching this folder's ID.
+        const count = Array.isArray(stats) 
+          ? stats.filter((s: any) => Number(s.client_cat_id) === f.id).length 
+          : 0;
+        
+        return {
+          id: f.id,
+          name: f.name,
+          totalClients: count,
+        createdDate: (f.created_at || f.createdAt) 
+          ? new Date(f.created_at || f.createdAt).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" }) 
+          : "N/A"
+        };
+      });
+
+      setFolders(mapped);
+    } catch (error) {
+      console.error("Failed to fetch folders", error);
     }
   };
  
-  const handleDeleteClient = (id: number) => {
-    setClients(prev => prev.filter(c => c.id !== id));
+  const fetchClients = async (catId: number) => {
+    try {
+      const data = await clientService.getSavedClients(catId);
+      const mapped = data.map((c: any) => ({
+        id: c.id,
+        businessName: c.business_name || c.display_name,
+        email: c.email || c.email_1 || "No email",
+        phone: c.phone || "—",
+        website: c.website || c.site || "—",
+        gmb: c.google_maps_url,
+        facebook: c.facebook_url || c.facebook,
+        twitter: c.twitter_url || c.twitter || c.x_url,
+        instagram: c.instagram_url || c.instagram,
+        yelp: c.yelp_url || c.yelp,
+        group: c.contacted ? "Contacted" : "Not Contacted",
+        emailsSent: c.emails_count || 0
+      }));
+      setClients(mapped);
+    } catch (error) {
+      console.error("Failed to fetch clients", error);
+    }
+  };
+
+  const handleSaveFolder = async (name: string) => {
+    try {
+      if (editingFolder) {
+        await clientService.updateCategory(editingFolder.id, name, "");
+      } else {
+        await clientService.createCategory(name, "");
+      }
+      fetchFolders();
+      setShowAddFolder(false);
+      setEditingFolder(null);
+    } catch (error) {
+      console.error("Failed to save folder", error);
+    }
+  };
+
+  const handleEditFolder = (f: Folder) => {
+    setEditingFolder(f);
+    setShowAddFolder(true);
+  };
+
+  const handleDeleteFolder = async (id: number) => {
+    if (!window.confirm("Are you sure you want to delete this folder?")) return;
+    try {
+      await clientService.deleteCategory(id);
+      setFolders(prev => prev.filter(f => f.id !== id));
+      if (selectedFolder?.id === id) setSelectedFolder(null);
+    } catch (error) {
+      console.error("Failed to delete folder", error);
+    }
+  };
+ 
+  const handleAddClient = async (c: Partial<Client>) => {
+    if (!selectedFolder) return;
+    try {
+      const payload = {
+        display_name: c.businessName!,
+        phone: c.phone || "",
+        email_1: c.email!,
+        site: c.website || "",
+        client_category_id: selectedFolder.id
+      };
+      await clientService.addClientManual(payload);
+      fetchClients(selectedFolder.id);
+      setFolders(prev => prev.map(f => f.id === selectedFolder.id ? { ...f, totalClients: f.totalClients + 1 } : f));
+      setSelectedFolder(f => f ? { ...f, totalClients: f.totalClients + 1 } : f);
+      setShowAddClient(false);
+    } catch (error) {
+      console.error("Failed to add client", error);
+    }
+  };
+
+  const handleUpdateClient = async (id: number, payload: any) => {
+    await clientService.updateClient(id, payload);
+    if (selectedFolder) {
+      fetchClients(selectedFolder.id);
+    }
+  };
+
+  const handleDeleteClient = async (id: number) => {
+    if (!window.confirm("Are you sure you want to delete this client?")) return;
+    try {
+      await clientService.deleteClient(id);
+      setClients(prev => prev.filter(c => c.id !== id));
+      if (selectedFolder) {
+        setFolders(prev => prev.map(f => f.id === selectedFolder.id ? { ...f, totalClients: f.totalClients - 1 } : f));
+        setSelectedFolder(f => f ? { ...f, totalClients: f.totalClients - 1 } : f);
+      }
+    } catch (error) {
+      console.error("Failed to delete client", error);
+    }
   };
  
   const handleImportSuccess = (count: number) => {
@@ -111,19 +202,20 @@ export default function ManageClients() {
           onAddClient={() => setShowAddClient(true)}
           onImport={() => setImportFlow("step1")}
           onDeleteClient={handleDeleteClient}
+          onUpdateClient={handleUpdateClient}
         />
       ) : (
         <FolderTable
           folders={folders}
           onSelect={f => setSelectedFolder(f)}
-          onEdit={f => console.log("edit", f)}
+          onEdit={handleEditFolder}
           onDelete={handleDeleteFolder}
           onAddFolder={() => setShowAddFolder(true)}
         />
       )}
  
       {/* Modals */}
-      {showAddFolder && <AddFolderModal onClose={() => setShowAddFolder(false)} onAdd={handleAddFolder} />}
+      {showAddFolder && <AddFolderModal onClose={() => { setShowAddFolder(false); setEditingFolder(null); }} onAdd={handleSaveFolder} />}
       {showAddClient && <AddClientModal onClose={() => setShowAddClient(false)} onAdd={handleAddClient} />}
       {importFlow === "step1" && <ImportStep1 onClose={() => setImportFlow("idle")} onNext={t => setImportFlow(t)} />}
       {importFlow === "file" && <ImportStepFile onClose={() => setImportFlow("idle")} onSuccess={handleImportSuccess} />}

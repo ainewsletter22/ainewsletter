@@ -23,6 +23,7 @@ export default function DashboardHeader() {
     { label: "Dashboard", icon: location.pathname === "/dashboard" ? Dashboard : DashboardInactive, path: "/dashboard" },
     { label: "Find Clients", icon: location.pathname === "/find-clients" ? clientsActive : clients, path: "/find-clients" },
     { label: "Manage Clients", icon: location.pathname === "/manage-clients" ? clientsIconActive : clientsIcon, path: "/manage-clients" },
+    { label: "Search History", icon: location.pathname === "/search-history" ? clientsActive : clients, path: "/search-history" },
   ];
 
   const handleLogout = async () => {
