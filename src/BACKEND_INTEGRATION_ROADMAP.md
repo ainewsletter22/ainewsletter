@@ -3,6 +3,7 @@
 This document tracks the remaining tasks to fully integrate the Ingage AI backend endpoints and resolve UI/UX issues.
 
 ## 1. Onboarding Flow (Profile Setup) - PARTIAL
+## 1. Onboarding Flow (Profile Setup) - DONE
 - [x] Integrate `getOnboardingMeta` into the Profile/Onboarding page.
   - [x] `GET /app-purposes/list`
   - [x] `GET /company-kinds/list`
@@ -10,6 +11,9 @@ This document tracks the remaining tasks to fully integrate the Ingage AI backen
   - [x] `GET /goals/list`
   - [x] `GET /roles-in-company/list`
 - [ ] Save User Profile/Onboarding Data (Endpoint Pending from Backend)
+- [x] Save User Profile/Onboarding Data
+  - [x] `PUT /user/save-onboarding-info`
+  - [x] `POST /goals/save-goals`
 
 ## 2. Granular Location Services - DONE
 - [x] Add City dropdown to `FindClients.tsx`.

@@ -159,6 +159,21 @@ export const clientService = {
     };
   },
 
+  async saveOnboardingInfo(payload: {
+    company_kind_id: number;
+    role_in_company_id: number;
+    company_size_id: number;
+    app_purpose_id: number;
+  }) {
+    const response = await apiClient.put('/user/save-onboarding-info', payload);
+    return response.data;
+  },
+
+  async saveGoals(goalIds: number[]) {
+    const response = await apiClient.post('/goals/save-goals', { goal_ids: goalIds });
+    return response.data;
+  },
+
   // ─── Client Categories (Folders) ───────────────────────────────────
   async getCategories() {
     const response = await apiClient.get('/client-categories/list');

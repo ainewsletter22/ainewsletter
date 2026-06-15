@@ -89,7 +89,6 @@ function ResultsToolbar({
   selectedIds,
   onSelectAll,
   allSelected,
-  onAddSelected,
   activeFilters,
   onFilterChange,
   sortBy,
