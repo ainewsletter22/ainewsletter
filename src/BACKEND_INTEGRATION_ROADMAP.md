@@ -2,7 +2,6 @@
 
 This document tracks the remaining tasks to fully integrate the Ingage AI backend endpoints and resolve UI/UX issues.
 
-## 1. Onboarding Flow (Profile Setup) - PARTIAL
 ## 1. Onboarding Flow (Profile Setup) - DONE
 - [x] Integrate `getOnboardingMeta` into the Profile/Onboarding page.
   - [x] `GET /app-purposes/list`
@@ -10,7 +9,6 @@ This document tracks the remaining tasks to fully integrate the Ingage AI backen
   - [x] `GET /company-sizes/list`
   - [x] `GET /goals/list`
   - [x] `GET /roles-in-company/list`
-- [ ] Save User Profile/Onboarding Data (Endpoint Pending from Backend)
 - [x] Save User Profile/Onboarding Data
   - [x] `PUT /user/save-onboarding-info`
   - [x] `POST /goals/save-goals`
@@ -45,3 +43,10 @@ This document tracks the remaining tasks to fully integrate the Ingage AI backen
 
 ## 6. UX Refinement (Postponed)
 - [ ] Map Precision & Africa Map bug (To be revisited)
+
+
+
+<!-- now i get this: clientService.ts:242 POST https://ai-newsletter-be.onrender.com/api/v1.0/clients/add 400 (Bad Request) Promise.then addClientManual @ clientService.ts:242 handleAddClient @ ManageClients.tsx:162 onClick @ AddClientModal.tsx:49 <button> AddClientModal @ AddClientModal.tsx:48 <AddClientModal> ManageClients @ ManageClients.tsx:232 <ManageClients> App @ App.tsx:33 <App> (anonymous) @ main.tsx:8
+
+ManageClients.tsx:168 Failed to add client AxiosError: Request failed with status code 400 at async Object.addClientManual (clientService.ts:242:22) at async handleAddClient (ManageClients.tsx:162:7) handleAddClient @ ManageClients.tsx:168 await in handleAddClient onClick @ AddClientModal.tsx:49 <button> AddClientModal @ AddClientModal.tsx:48 <AddClientModal> ManageClients @ ManageClients.tsx:232 <ManageClients> App @ App.tsx:33 <App> (anonymous) @ main.tsx:8 -->
+

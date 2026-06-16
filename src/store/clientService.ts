@@ -165,11 +165,13 @@ export const clientService = {
     company_size_id: number;
     app_purpose_id: number;
   }) {
+    console.log("Saving Onboarding Info payload:", payload);
     const response = await apiClient.put('/user/save-onboarding-info', payload);
     return response.data;
   },
 
   async saveGoals(goalIds: number[]) {
+    console.log("Saving Goals payload:", { goal_ids: goalIds });
     const response = await apiClient.post('/goals/save-goals', { goal_ids: goalIds });
     return response.data;
   },
@@ -230,15 +232,23 @@ export const clientService = {
     return response.data;
   },
 
-  async addClientManual(payload: {
-    display_name: string;
-    phone: string;
-    email_1: string;
-    site: string;
-    client_category_id: number | string;
-  }) {
-    const response = await apiClient.post('/clients/add', payload);
+  async addClientManual(payload: any) {
+    const formData = new FormData();
+    Object.entries(payload).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        formData.append(key, String(value));
+      }
+    });
+    const response = await apiClient.post('/clients/add', formData);
     return response.data;
+  },
+
+  async addClientsBatchManual(clients: any[], categoryId: number | string) {
+    // If the backend doesn't have a specific bulk-import endpoint yet, 
+    // we loop through the individual addClientManual calls.
+    return Promise.all(
+      clients.map(client => this.addClientManual({ ...client, client_category_id: categoryId }))
+    );
   },
 
   async getAllJobs() {

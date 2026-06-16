@@ -148,11 +148,16 @@ export default function ManageClients() {
     if (!selectedFolder) return;
     try {
       const payload = {
+        // Send both variations of keys to handle backend inconsistency
         display_name: c.businessName!,
-        phone: c.phone || "",
+        business_name: c.businessName!,
         email_1: c.email!,
+        email: c.email!,
         site: c.website || "",
-        client_category_id: selectedFolder.id
+        website: c.website || "",
+        phone: c.phone || "",
+        client_category_id: selectedFolder.id,
+        client_cat_id: selectedFolder.id // Alternate key often used in stats
       };
       await clientService.addClientManual(payload);
       fetchClients(selectedFolder.id);
@@ -185,8 +190,16 @@ export default function ManageClients() {
     }
   };
  
-  const handleImportSuccess = (count: number) => {
-    setImportCount(count);
+  const handleImportSuccess = async (data: any) => {
+    if (!selectedFolder) return;
+    try {
+      const dataArray = Array.isArray(data) ? data : [];
+      await clientService.addClientsBatchManual(dataArray, selectedFolder.id);
+      await fetchClients(selectedFolder.id);
+      setImportCount(dataArray.length);
+    } catch (error) {
+      console.error("Batch import failed", error);
+    }
     setImportFlow("success");
   };
  
@@ -218,8 +231,8 @@ export default function ManageClients() {
       {showAddFolder && <AddFolderModal onClose={() => { setShowAddFolder(false); setEditingFolder(null); }} onAdd={handleSaveFolder} />}
       {showAddClient && <AddClientModal onClose={() => setShowAddClient(false)} onAdd={handleAddClient} />}
       {importFlow === "step1" && <ImportStep1 onClose={() => setImportFlow("idle")} onNext={t => setImportFlow(t)} />}
-      {importFlow === "file" && <ImportStepFile onClose={() => setImportFlow("idle")} onSuccess={handleImportSuccess} />}
-      {importFlow === "paste" && <ImportStepPaste onClose={() => setImportFlow("idle")} onSuccess={handleImportSuccess} />}
+      {importFlow === "file" && <ImportStepFile onClose={() => setImportFlow("idle")} onSuccess={handleImportSuccess as any} />}
+      {importFlow === "paste" && <ImportStepPaste onClose={() => setImportFlow("idle")} onSuccess={handleImportSuccess as any} />}
       {importFlow === "success" && <ImportSuccessModal count={importCount} onClose={() => setImportFlow("idle")} />}
     </>
   );
