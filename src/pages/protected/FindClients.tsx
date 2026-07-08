@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "react-router-dom";
 import type { ClientData } from "../../components/Clientcard";
 import DashboardHeader from "../../components/Dashboardheader";
 import ClientCard from "../../components/Clientcard";
 import logo from "../../assets/mainLogoNBG.png";
-import { clientService } from "../../store/clientService";
+import { clientService } from "../../services/clientService";
+import type { ApiListItem, Category, City, Country } from "../../types/domain";
 
 
 // ── Page state type ────────────────────────────────────────────────────────────
@@ -105,8 +106,8 @@ function ResultsToolbar({
   onFilterChange: (f: string) => void;
   sortBy: string;
   onSortChange: (s: string) => void;
-  categories: any[];
-  onAddWithCategory: (catId: string) => void;
+  categories: Category[];
+  onAddWithCategory: (catId: number) => void;
 }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
@@ -292,7 +293,7 @@ export default function FindClients() {
   const [stateId, setStateId] = useState("");
   const [state, setState] = useState("");
   const [city, setCity] = useState("");
-  const [availableCities, setAvailableCities] = useState<any[]>([]);
+  const [availableCities, setAvailableCities] = useState<City[]>([]);
   const [moreFilters, setMoreFilters] = useState("");
   const [pageState, setPageState] = useState<PageState>("idle");
   const [clients, setClients] = useState<ClientData[]>([]);
@@ -302,11 +303,11 @@ export default function FindClients() {
   const [statusText, setStatusText] = useState("");
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState("Sort by reviews");
-  const [categories, setCategories] = useState<any[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
 
-  const [meta, setMeta] = useState<{ countries: any[], niches: any[] }>({ countries: [], niches: [] });
-  const pollingRef = useRef<any>(null);
-  const progressTimerRef = useRef<any>(null);
+  const [meta, setMeta] = useState<{ countries: Country[]; niches: ApiListItem[] }>({ countries: [], niches: [] });
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -357,44 +358,21 @@ export default function FindClients() {
     };
   }, []);
 
-  // Handle resuming a job from Search History
-  useEffect(() => {
-    const resumeId = routeLocation.state?.resumeJobId;
-    if (resumeId) {
-      setPageState("loading");
-      pollJobStatus(resumeId);
-    }
-  }, [routeLocation.state]);
-
-  const availableStates = meta.countries.find(c => c.id.toString() === countryId)?.states || [];
-
-  useEffect(() => {
-    if (countryId && stateId) {
-      clientService.getCities(countryId, stateId)
-        .then(data => setAvailableCities(data || []))
-        .catch(() => setAvailableCities([]));
-    } else {
-      setAvailableCities([]);
-      setCity("");
-    }
-  }, [countryId, stateId]);
-
-  // Simulates a smooth progress bar crawl
-  const startProgressSimulation = () => {
+  const startProgressSimulation = useCallback(() => {
     setProgressValue(5);
     if (progressTimerRef.current) clearInterval(progressTimerRef.current);
     
     progressTimerRef.current = setInterval(() => {
       setProgressValue((prev) => {
-        if (prev < 30) return prev + 2;      // Fast start
-        if (prev < 70) return prev + 0.5;    // Medium mid-section
-        if (prev < 98) return prev + 0.1;    // Very slow crawl at the end
+        if (prev < 30) return prev + 2;
+        if (prev < 70) return prev + 0.5;
+        if (prev < 98) return prev + 0.1;
         return prev;
       });
     }, 500);
-  };
+  }, []);
 
-  const pollJobStatus = (jobId: string) => {
+  const pollJobStatus = useCallback((jobId: string) => {
     if (pollingRef.current) clearInterval(pollingRef.current);
     setStatusText("Processing AI Request...");
     startProgressSimulation();
@@ -405,7 +383,6 @@ export default function FindClients() {
         const status = job.data?.status || "processing";
         setStatusText(`AI Status: ${status}`);
 
-        // Polling until status is "complete" per Postman test
         if (status === "complete") {
           if (pollingRef.current) clearInterval(pollingRef.current);
           if (progressTimerRef.current) clearInterval(progressTimerRef.current);
@@ -425,7 +402,28 @@ export default function FindClients() {
         console.error("Polling error:", error);
       }
     }, 3000);
-  };
+  }, [startProgressSimulation]);
+
+  // Handle resuming a job from Search History
+  useEffect(() => {
+    const resumeId = (routeLocation.state as { resumeJobId?: string } | null)?.resumeJobId;
+    if (!resumeId) return;
+    const timer = window.setTimeout(() => {
+      setPageState("loading");
+      pollJobStatus(resumeId);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [pollJobStatus, routeLocation.state]);
+
+  const availableStates = meta.countries.find(c => c.id.toString() === countryId)?.states || [];
+
+  useEffect(() => {
+    if (countryId && stateId) {
+      clientService.getCities(countryId, stateId)
+        .then(data => setAvailableCities(data || []))
+        .catch(() => setAvailableCities([]));
+    }
+  }, [countryId, stateId]);
 
   // Simulate search
   const handleSearch = async () => {
@@ -468,7 +466,7 @@ export default function FindClients() {
     }
   };
 
-  const handleAddSelected = async (categoryId: string) => {
+  const handleAddSelected = async (categoryId: number) => {
     try {
       await clientService.addClientsToManage(selectedIds, categoryId);
       alert(`${selectedIds.length} clients added successfully!`);
@@ -568,6 +566,7 @@ export default function FindClients() {
                     setStateId("");
                     setState("");
                     setCity("");
+                    setAvailableCities([]);
                   }}
                   className="w-full appearance-none bg-white rounded-lg px-4 py-4 text-sm text-gray-500 pr-9 focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer"
                 >
@@ -589,15 +588,16 @@ export default function FindClients() {
                   disabled={!countryId}
                   onChange={(e) => {
                     const id = e.target.value;
-                    const match = availableStates.find((s: any) => s.id.toString() === id);
+                    const match = availableStates.find((s) => s.id.toString() === id);
                     setStateId(id);
                     setState(match ? match.name : "");
                     setCity("");
+                    setAvailableCities([]);
                   }}
                   className="w-full appearance-none bg-white rounded-lg px-4 py-4 text-sm text-gray-500 pr-9 focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer disabled:bg-gray-50 disabled:cursor-not-allowed"
                 >
                   <option value="">{countryId ? "Select state" : "Choose country first"}</option>
-                  {availableStates.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {availableStates.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
                   <ChevronIcon />
@@ -616,7 +616,7 @@ export default function FindClients() {
                   className="w-full appearance-none bg-white rounded-lg px-4 py-4 text-sm text-gray-500 pr-9 focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer disabled:bg-gray-50 disabled:cursor-not-allowed"
                 >
                   <option value="">{stateId ? "Select city" : "Choose state first"}</option>
-                  {availableCities.map((c: any) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  {availableCities.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
                 </select>
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
                   <ChevronIcon />

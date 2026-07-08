@@ -7,7 +7,7 @@ import user from '../../assets/user.svg'
 import email from '../../assets/email.svg'
 import view from '../../assets/transparency.svg'
 import unview from '../../assets/noTransparency.svg'
-import { authService } from "../../store/authService";
+import { authService } from "../../services/authService";
 
 function SignUp() {
   const navigate = useNavigate();
@@ -47,8 +47,11 @@ function SignUp() {
       setSuccess(res.data.message || "Registration successful! Please check your email.");
       // Optionally clear form
       setFormData({ firstName: '', lastName: '', email: '', password: '', terms: false });
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Registration failed. Please try again.");
+    } catch (err: unknown) {
+      const errorMessage = typeof err === "object" && err !== null && "response" in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setError(errorMessage || "Registration failed. Please try again.");
     } finally {
       setIsLoading(false);
     }

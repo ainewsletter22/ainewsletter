@@ -3,24 +3,32 @@ import bot from '../../assets/botHead.png';
 import aiPortrait from '../../assets/aiPortrait.png';
 import aiWizard from '../../assets/aiWizard.png';
 import logoBAW from '../../assets/logoBAW.png';
-import { clientService } from "../../store/clientService";
+import { clientService } from "../../services/clientService";
+import type { ApiListItem } from "../../types/domain";
 
 interface GoalModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onContinue: (goal: string) => void;
+  onContinue: (goal: string | string[]) => void;
   onDashboard: () => void;
+}
+
+interface GoalOption {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
 }
 
 export default function GoalModal({ isOpen, onClose, onContinue, onDashboard }: GoalModalProps) {
   const [selected, setSelected] = useState("");
-  const [backendGoals, setBackendGoals] = useState<any[]>([]);
+  const [backendGoals, setBackendGoals] = useState<GoalOption[]>([]);
 
   useEffect(() => {
     if (isOpen) {
       clientService.getOnboardingMeta().then((data) => {
         // Map backend goals to UI structure
-        const mapped = data.goals.map((g: any) => {
+        const mapped = data.goals.map((g: ApiListItem) => {
           const name = g.name.toLowerCase();
           let icon = aiWizard; // Default fallback
           let desc = g.description || "Harness the power of AI.";

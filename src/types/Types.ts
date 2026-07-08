@@ -107,3 +107,87 @@ export interface Client {
   name: string;
   email: string;
 }
+
+// ─── Brand Types ──────────────────────────────────────────────────────────────
+
+export type DomainStatus = "Pending" | "Verified" | "Failed";
+
+export interface DNSRecord {
+  type: string;
+  name: string;
+  content: string;
+  ttl: string;
+  priority?: string;
+  verified?: boolean;
+}
+
+export interface BrandDomain {
+  id: number;
+  name: string;
+  region: string;
+  status: DomainStatus;
+  addedAt: string;
+  enableSending: boolean;
+  enableReceiving: boolean;
+  dkim: DNSRecord;
+  spf: DNSRecord[];
+  dmarc: DNSRecord;
+}
+
+export interface SMTPSettings {
+  provider: string;
+  host: string;
+  port: string;
+  security: "SSL" | "TLS";
+  username: string;
+  password?: string;
+}
+
+export interface PrivacySettings {
+  trackOpens: "Yes" | "No";
+  trackClicks: "Yes" | "Anonymously" | "No";
+  notifyOnCampaign: boolean;
+  notifyEmail: string;
+}
+
+export type SendingLimitType = "Unlimited" | "Monthly Limit" | "Non Expiring Limit";
+
+export interface SendingLimitSettings {
+  limitType: SendingLimitType;
+  emailsPerMonth?: number;
+  currentlyUsed: number;
+  resetDay: number;
+}
+
+export interface FooterSettings {
+  unsubscribeText: string;
+  companyName: string;
+  address: string;
+  cityStateZip: string;
+  removeBadge: boolean;
+}
+
+export interface Brand {
+  id: number;
+  name: string;
+  fromName: string;
+  fromEmail: string;
+  replyToEmail: string;
+  logo?: string;
+  dateCreated: string;
+  totalCampaigns: number;
+  sendsVia: string;
+  domains: BrandDomain[];
+  smtp: SMTPSettings;
+  privacy: PrivacySettings;
+  sendingLimit: SendingLimitSettings;
+  footer: FooterSettings;
+}
+
+export interface BrandFormValues {
+  name: string;
+  fromName: string;
+  fromEmail: string;
+  replyToEmail: string;
+  logo?: string;
+}

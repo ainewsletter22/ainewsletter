@@ -9,7 +9,7 @@ import clientsIcon from "../assets/clientsIcon.svg";
 import clientsIconActive from "../assets/manageClientsActive.svg";
 import sendIcon from "../assets/sendIcon.png";
 import { useAuthStore } from "../store/useAuthStore";
-import { authService } from "../store/authService";
+import { authService } from "../services/authService";
 
 
 export default function DashboardHeader() {
@@ -23,7 +23,7 @@ export default function DashboardHeader() {
     { label: "Dashboard", icon: location.pathname === "/dashboard" ? Dashboard : DashboardInactive, path: "/dashboard" },
     { label: "Find Clients", icon: location.pathname === "/find-clients" ? clientsActive : clients, path: "/find-clients" },
     { label: "Manage Clients", icon: location.pathname === "/manage-clients" ? clientsIconActive : clientsIcon, path: "/manage-clients" },
-    { label: "Search History", icon: location.pathname === "/search-history" ? clientsActive : clients, path: "/search-history" },
+    // { label: "Search History", icon: location.pathname === "/search-history" ? clientsActive : clients, path: "/search-history" },
   ];
 
   const handleLogout = async () => {
@@ -100,8 +100,8 @@ export default function DashboardHeader() {
 
         {/* Send AI Newsletter CTA */}
         <button 
-          className={`lg:ml-3 flex items-center justify-center shrink-0 w-full lg:w-auto gap-2 bg-linear-to-r from-[#337DD3] to-[#9C4EFF] hover:shadow-[0_0_20px_rgba(156,78,255,0.5)] hover:from-blue-600 hover:to-blue-700 text-white font-semibold text-sm px-4 py-3 rounded-xl transition-all mt-2 md:mt-0 ${location.pathname === "/news-letter" ? "shadow-[0_4px_20px_rgba(156,78,255,0.6)]" : "shadow-md"}`}
-          onClick={() => { navigate('/news-letter'); setMobileMenuOpen(false); }}
+          className={`lg:ml-3 flex items-center justify-center shrink-0 w-full lg:w-auto gap-2 bg-linear-to-r from-[#337DD3] to-[#9C4EFF] hover:shadow-[0_0_20px_rgba(156,78,255,0.5)] hover:from-blue-600 hover:to-blue-700 text-white font-semibold text-sm px-4 py-3 rounded-xl transition-all mt-2 md:mt-0 ${location.pathname.startsWith("/news-letter") ? "shadow-[0_4px_20px_rgba(156,78,255,0.6)]" : "shadow-md"}`}
+          onClick={() => { navigate('/news-letter/brands'); setMobileMenuOpen(false); }}
           >
           Send AI Newsletter    
           <img src={sendIcon} className="" alt="" />

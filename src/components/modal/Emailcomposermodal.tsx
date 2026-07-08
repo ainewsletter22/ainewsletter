@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ComponentType } from "react";
 import type { ComposeForm, ConfirmForm } from "../../types/Types";
 import { useAuthStore } from "../../store/useAuthStore";
 import "react-quill-new/dist/quill.snow.css";
@@ -51,11 +51,25 @@ function RichEditor({ value, onChange }: { value: string; onChange: (v: string) 
 }
 
 // Separate component so dynamic import works cleanly
+type QuillProps = {
+  theme: string;
+  value: string;
+  onChange: (value: string) => void;
+  modules: {
+    toolbar: Array<unknown>;
+  };
+  formats: string[];
+  className?: string;
+};
+
 function QuillEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [ReactQuill, setReactQuill] = useState<any>(null);
+  const [ReactQuill, setReactQuill] = useState<ComponentType<QuillProps> | null>(null);
 
   useEffect(() => {
-    import("react-quill-new").then(mod => setReactQuill(() => mod.default));
+    import("react-quill-new").then((mod) => {
+      const component = mod.default as unknown as ComponentType<QuillProps>;
+      setReactQuill(() => component);
+    });
   }, []);
 
   const modules = {

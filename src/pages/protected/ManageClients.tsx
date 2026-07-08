@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import ClientDetailView from "../../components/ClientDetailView";
 import FolderTable from "../../components/FolderTable";
 import AddFolderModal from "../../components/modal/AddFolderModal";
@@ -8,7 +8,8 @@ import ImportStepFile from "../../components/modal/ImportStepFile";
 import ImportStepPaste from "../../components/modal/ImportStepPaste";
 import ImportSuccessModal from "../../components/modal/ImportSuccessModal";
 import DashboardHeader from "../../components/Dashboardheader";
-import { clientService } from "../../store/clientService";
+import { clientService } from "../../services/clientService";
+import type { ClientUpdatePayload, ManagedClient, SavedClientRecord } from "../../types/domain";
 
 interface Folder {
   id: number;
@@ -17,70 +18,53 @@ interface Folder {
   createdDate: string;
 }
 
-interface Client {
-  id: number;
-  businessName: string;
-  email: string;
-  phone?: string;
-  website?: string;
-  gmb?: string;
-  facebook?: string;
-  twitter?: string;
-  instagram?: string;
-  yelp?: string;
-  group: "Contacted" | "Not Contacted";
-  emailsSent: number;
-}
-
 type ImportFlow = "idle" | "step1" | "file" | "paste" | "success";
+
+function mapSavedClient(c: SavedClientRecord): ManagedClient {
+  return {
+    id: c.id,
+    businessName: c.business_name || c.display_name || "Unnamed client",
+    email: c.email || c.email_1 || "No email",
+    phone: c.phone || "-",
+    website: c.website || c.site || "-",
+    gmb: c.google_maps_url || undefined,
+    facebook: c.facebook_url || c.facebook || undefined,
+    twitter: c.twitter_url || c.twitter || c.x_url || undefined,
+    instagram: c.instagram_url || c.instagram || undefined,
+    yelp: c.yelp_url || c.yelp || undefined,
+    group: c.contacted ? "Contacted" : "Not Contacted",
+    emailsSent: c.emails_count || 0,
+  };
+}
  
 export default function ManageClients() {
   const [folders, setFolders] = useState<Folder[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
+  const [clients, setClients] = useState<ManagedClient[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<Folder | null>(null);
- 
-  // Modals
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [showAddClient, setShowAddClient] = useState(false);
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
   const [importFlow, setImportFlow] = useState<ImportFlow>("idle");
   const [importCount, setImportCount] = useState(0);
- 
-  useEffect(() => {
-    fetchFolders();
-  }, []);
 
-  useEffect(() => {
-    if (selectedFolder) {
-      fetchClients(selectedFolder.id);
-    }
-  }, [selectedFolder]);
-
-  const fetchFolders = async () => {
+  const fetchFolders = useCallback(async () => {
     try {
-      // Fetch categories and stats (counts) in parallel
       const [categories, stats] = await Promise.all([
         clientService.getCategories(),
-        clientService.getSavedClients() // Hits /clients/list which returns grouped counts
+        clientService.getSavedClients(),
       ]);
 
-      console.log("DEBUG: Raw Categories:", categories);
-      console.log("DEBUG: Raw Stats from /clients/list:", stats);
+      const mapped = categories.map((f) => {
+        const count = stats.filter((s) => Number(s.client_cat_id) === f.id).length;
+        const createdAt = f.created_at || f.createdAt;
 
-      const mapped = categories.map((f: any) => {
-        // The stats array is actually a list of clients. 
-        // We count how many clients have a client_cat_id matching this folder's ID.
-        const count = Array.isArray(stats) 
-          ? stats.filter((s: any) => Number(s.client_cat_id) === f.id).length 
-          : 0;
-        
         return {
           id: f.id,
           name: f.name,
           totalClients: count,
-        createdDate: (f.created_at || f.createdAt) 
-          ? new Date(f.created_at || f.createdAt).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" }) 
-          : "N/A"
+          createdDate: createdAt
+            ? new Date(createdAt).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })
+            : "N/A",
         };
       });
 
@@ -88,30 +72,29 @@ export default function ManageClients() {
     } catch (error) {
       console.error("Failed to fetch folders", error);
     }
-  };
+  }, []);
  
-  const fetchClients = async (catId: number) => {
+  const fetchClients = useCallback(async (categoryId: number) => {
     try {
-      const data = await clientService.getSavedClients(catId);
-      const mapped = data.map((c: any) => ({
-        id: c.id,
-        businessName: c.business_name || c.display_name,
-        email: c.email || c.email_1 || "No email",
-        phone: c.phone || "—",
-        website: c.website || c.site || "—",
-        gmb: c.google_maps_url,
-        facebook: c.facebook_url || c.facebook,
-        twitter: c.twitter_url || c.twitter || c.x_url,
-        instagram: c.instagram_url || c.instagram,
-        yelp: c.yelp_url || c.yelp,
-        group: c.contacted ? "Contacted" : "Not Contacted",
-        emailsSent: c.emails_count || 0
-      }));
-      setClients(mapped);
+      const data = await clientService.getSavedClients(categoryId);
+      setClients(data.map(mapSavedClient));
     } catch (error) {
       console.error("Failed to fetch clients", error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void fetchFolders(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchFolders]);
+
+  useEffect(() => {
+    if (!selectedFolder) return;
+    const loadClients = async () => {
+      await fetchClients(selectedFolder.id);
+    };
+    void loadClients();
+  }, [fetchClients, selectedFolder]);
 
   const handleSaveFolder = async (name: string) => {
     try {
@@ -128,8 +111,8 @@ export default function ManageClients() {
     }
   };
 
-  const handleEditFolder = (f: Folder) => {
-    setEditingFolder(f);
+  const handleEditFolder = (folder: Folder) => {
+    setEditingFolder(folder);
     setShowAddFolder(true);
   };
 
@@ -137,39 +120,45 @@ export default function ManageClients() {
     if (!window.confirm("Are you sure you want to delete this folder?")) return;
     try {
       await clientService.deleteCategory(id);
-      setFolders(prev => prev.filter(f => f.id !== id));
+      setFolders((prev) => prev.filter((folder) => folder.id !== id));
       if (selectedFolder?.id === id) setSelectedFolder(null);
     } catch (error) {
       console.error("Failed to delete folder", error);
     }
   };
  
-  const handleAddClient = async (c: Partial<Client>) => {
+  const handleAddClient = async (client: Partial<ManagedClient>) => {
     if (!selectedFolder) return;
     try {
-      const payload = {
-        // Send both variations of keys to handle backend inconsistency
-        display_name: c.businessName!,
-        business_name: c.businessName!,
-        email_1: c.email!,
-        email: c.email!,
-        site: c.website || "",
-        website: c.website || "",
-        phone: c.phone || "",
-        client_category_id: selectedFolder.id,
-        client_cat_id: selectedFolder.id // Alternate key often used in stats
-      };
-      await clientService.addClientManual(payload);
+      // Step 1: create minimal record (server only accepts business_name on create)
+      const createdResp = await clientService.addClientManual({ business_name: client.businessName });
+      const createdId = createdResp?.data?.id;
+      if (!createdId) throw new Error("Failed to get created client id");
+
+      // Step 2: update the newly created client with rest of fields
+      const updatePayload: ClientUpdatePayload = {};
+      if (client.email) updatePayload.email = client.email;
+      if (client.phone) updatePayload.phone = client.phone;
+      if (client.website) updatePayload.website = client.website;
+      // use server-accepted category key
+      updatePayload.client_cat_id = selectedFolder.id;
+
+      await clientService.updateClient(createdId, updatePayload);
+
+      // Refresh UI
       fetchClients(selectedFolder.id);
-      setFolders(prev => prev.map(f => f.id === selectedFolder.id ? { ...f, totalClients: f.totalClients + 1 } : f));
-      setSelectedFolder(f => f ? { ...f, totalClients: f.totalClients + 1 } : f);
+      setFolders((prev) => prev.map((folder) => (
+        folder.id === selectedFolder.id ? { ...folder, totalClients: folder.totalClients + 1 } : folder
+      )));
+      setSelectedFolder((folder) => folder ? { ...folder, totalClients: folder.totalClients + 1 } : folder);
       setShowAddClient(false);
     } catch (error) {
-      console.error("Failed to add client", error);
+      const axiosError = error as { response?: { data?: unknown; status?: number } };
+      console.error("Failed to add client", axiosError?.response?.data || error);
     }
   };
 
-  const handleUpdateClient = async (id: number, payload: any) => {
+  const handleUpdateClient = async (id: number, payload: ClientUpdatePayload) => {
     await clientService.updateClient(id, payload);
     if (selectedFolder) {
       fetchClients(selectedFolder.id);
@@ -180,32 +169,27 @@ export default function ManageClients() {
     if (!window.confirm("Are you sure you want to delete this client?")) return;
     try {
       await clientService.deleteClient(id);
-      setClients(prev => prev.filter(c => c.id !== id));
+      setClients((prev) => prev.filter((client) => client.id !== id));
       if (selectedFolder) {
-        setFolders(prev => prev.map(f => f.id === selectedFolder.id ? { ...f, totalClients: f.totalClients - 1 } : f));
-        setSelectedFolder(f => f ? { ...f, totalClients: f.totalClients - 1 } : f);
+        setFolders((prev) => prev.map((folder) => (
+          folder.id === selectedFolder.id ? { ...folder, totalClients: folder.totalClients - 1 } : folder
+        )));
+        setSelectedFolder((folder) => folder ? { ...folder, totalClients: folder.totalClients - 1 } : folder);
       }
     } catch (error) {
       console.error("Failed to delete client", error);
     }
   };
  
-  const handleImportSuccess = async (data: any) => {
+  const handleImportSuccess = async (count: number) => {
     if (!selectedFolder) return;
-    try {
-      const dataArray = Array.isArray(data) ? data : [];
-      await clientService.addClientsBatchManual(dataArray, selectedFolder.id);
-      await fetchClients(selectedFolder.id);
-      setImportCount(dataArray.length);
-    } catch (error) {
-      console.error("Batch import failed", error);
-    }
+    setImportCount(count);
     setImportFlow("success");
   };
  
   return (
     <>
-        <DashboardHeader />
+      <DashboardHeader />
 
       {selectedFolder ? (
         <ClientDetailView
@@ -220,19 +204,26 @@ export default function ManageClients() {
       ) : (
         <FolderTable
           folders={folders}
-          onSelect={f => setSelectedFolder(f)}
+          onSelect={(folder) => setSelectedFolder(folder)}
           onEdit={handleEditFolder}
           onDelete={handleDeleteFolder}
           onAddFolder={() => setShowAddFolder(true)}
         />
       )}
  
-      {/* Modals */}
-      {showAddFolder && <AddFolderModal onClose={() => { setShowAddFolder(false); setEditingFolder(null); }} onAdd={handleSaveFolder} />}
+      {showAddFolder && (
+        <AddFolderModal
+          onClose={() => {
+            setShowAddFolder(false);
+            setEditingFolder(null);
+          }}
+          onAdd={handleSaveFolder}
+        />
+      )}
       {showAddClient && <AddClientModal onClose={() => setShowAddClient(false)} onAdd={handleAddClient} />}
-      {importFlow === "step1" && <ImportStep1 onClose={() => setImportFlow("idle")} onNext={t => setImportFlow(t)} />}
-      {importFlow === "file" && <ImportStepFile onClose={() => setImportFlow("idle")} onSuccess={handleImportSuccess as any} />}
-      {importFlow === "paste" && <ImportStepPaste onClose={() => setImportFlow("idle")} onSuccess={handleImportSuccess as any} />}
+      {importFlow === "step1" && <ImportStep1 onClose={() => setImportFlow("idle")} onNext={(step) => setImportFlow(step)} />}
+      {importFlow === "file" && <ImportStepFile onClose={() => setImportFlow("idle")} onSuccess={handleImportSuccess} />}
+      {importFlow === "paste" && <ImportStepPaste onClose={() => setImportFlow("idle")} onSuccess={handleImportSuccess} />}
       {importFlow === "success" && <ImportSuccessModal count={importCount} onClose={() => setImportFlow("idle")} />}
     </>
   );

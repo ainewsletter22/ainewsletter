@@ -1,6 +1,6 @@
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export interface Client {
+interface Client {
   id: string;
   name: string;
   email: string;
@@ -10,7 +10,7 @@ export interface Client {
 
 // ── Mock data ──────────────────────────────────────────────────────────────
 
-export const MOCK_CLIENTS: Client[] = [
+const MOCK_CLIENTS: Client[] = [
   { id: "1", name: "Chris beauty hair salon", email: "example@yourdomain.com", phone: "(786) 252-8856", website: "https://example.com" },
   { id: "2", name: "Chris beauty hair salon", email: "example@yourdomain.com", phone: "(786) 252-8856", website: "https://example.com" },
   { id: "3", name: "Chris beauty hair salon", email: "example@yourdomain.com", phone: "(786) 252-8856", website: "https://example.com" },

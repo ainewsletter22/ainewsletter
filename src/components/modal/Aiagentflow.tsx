@@ -80,7 +80,7 @@ function ContentStep({
   };
 
   const removeHeadline = (i: number) => {
-    onChange("headlines", form.headlines.filter((_:any, idx:any) => idx !== i));
+    onChange("headlines", form.headlines.filter((_, idx) => idx !== i));
   };
 
   return (
@@ -118,10 +118,10 @@ function ContentStep({
               <span className="text-xs text-gray-400">limit: {LIMIT}</span>
             </div>
             <div className="space-y-2">
-              {form.headlines.map((h:any, i:any) => (
-                <div key={i} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
-                  <span className="text-sm text-gray-700 flex-1 truncate">{h}</span>
-                  <button onClick={() => removeHeadline(i)} className="text-gray-400 hover:text-red-500 ml-2 text-lg leading-none">✕</button>
+              {form.headlines.map((headline, index) => (
+                <div key={index} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
+                  <span className="text-sm text-gray-700 flex-1 truncate">{headline}</span>
+                  <button onClick={() => removeHeadline(index)} className="text-gray-400 hover:text-red-500 ml-2 text-lg leading-none">✕</button>
                 </div>
               ))}
             </div>

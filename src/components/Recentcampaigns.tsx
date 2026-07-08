@@ -1,6 +1,6 @@
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export interface Campaign {
+interface Campaign {
   id: string;
   name: string;
   clientCount: number;
@@ -9,7 +9,7 @@ export interface Campaign {
 
 // ── Mock data ──────────────────────────────────────────────────────────────
 
-export const MOCK_CAMPAIGNS: Campaign[] = [
+const MOCK_CAMPAIGNS: Campaign[] = [
   { id: "1", name: "Beauty Salons Miami FL", clientCount: 60,  date: "04.04.2021 – 10:12AM" },
   { id: "2", name: "Chris beauty hair salon", clientCount: 202, date: "04.04.2021 – 10:40AM" },
   { id: "3", name: "Beauty Salons Miami FL", clientCount: 60,  date: "04.04.2021 – 10:12AM" },

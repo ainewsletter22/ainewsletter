@@ -17,9 +17,29 @@ interface Client {
 }
  
 
-function AddClientModal({ onClose, onAdd }: { onClose: () => void; onAdd: (c: Partial<Client>) => void }) {
+function AddClientModal({ onClose, onAdd }: { onClose: () => void; onAdd: (c: Partial<Client>) => Promise<void> }) {
   const [form, setForm] = useState({ businessName: "", phone: "", email: "", website: "" });
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const [error, setError] = useState("");
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm(f => ({ ...f, [k]: e.target.value }));
+    if (error) setError("");
+  };
+
+  const handleSave = async () => {
+    if (!form.businessName.trim() || !form.email.trim()) {
+      setError("Client name and email are required.");
+      return;
+    }
+
+    try {
+      await onAdd({ ...form, group: "Not Contacted", emailsSent: 0 });
+      onClose();
+    } catch (err) {
+      console.error("Failed to add client from modal", err);
+      setError("Unable to save client. Check the console for details.");
+    }
+  };
+
   return (
     <Overlay>
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-2xl">
@@ -45,8 +65,9 @@ function AddClientModal({ onClose, onAdd }: { onClose: () => void; onAdd: (c: Pa
             <input className="w-full bg-gray-100 rounded-lg px-4 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Client Website" value={form.website} onChange={set("website")} />
           </div>
         </div>
+        {error ? <div className="mb-4 text-sm text-red-600">{error}</div> : null}
         <button
-          onClick={() => { if (form.businessName && form.email) { onAdd({ ...form, group: "Not Contacted", emailsSent: 0 }); onClose(); } }}
+          onClick={handleSave}
           className="bg-[#337DD3] hover:bg-[#0a65cd] text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors"
         >
           + Save Client

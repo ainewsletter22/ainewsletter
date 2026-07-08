@@ -5,17 +5,21 @@ import LatestClients from "../../components/Latestclients";
 import RecentCampaigns from "../../components/Recentcampaigns";
 import StatsBar from "../../components/Statsbar";
 import { useAuthStore } from "../../store/useAuthStore";
-import { clientService } from "../../store/clientService";
+import { clientService } from "../../services/clientService";
 import OnboardingModal from "../../components/modal/Onboardingmodal";
 import GoalModal from "../../components/modal/Goalmodal";
+import type { OnboardingSelections } from "../../types/domain";
 
 
 export default function Dashboard() {
   const user = useAuthStore((state) => state.user);
   const [stats, setStats] = useState({ total: 0, contacted: 0 });
   
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [showGoal, setShowGoal] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem("ingage_onboarding_seen"));
+  const [showGoal, setShowGoal] = useState(() => (
+    !!localStorage.getItem("ingage_onboarding_seen") &&
+    !sessionStorage.getItem("ingage_session_goal_set")
+  ));
 
   useEffect(() => {
     let isMounted = true;
@@ -31,21 +35,7 @@ export default function Dashboard() {
     return () => { isMounted = false; };
   }, []);
 
-  useEffect(() => {
-    // 1. Check if user has ever seen the onboarding (Development fallback included)
-    const hasSeenOnboarding = localStorage.getItem("ingage_onboarding_seen");
-    
-    // 2. Check if goal has been set for this specific login session
-    const hasSetGoalThisSession = sessionStorage.getItem("ingage_session_goal_set");
-
-    if (!hasSeenOnboarding) {
-      setShowOnboarding(true);
-    } else if (!hasSetGoalThisSession) {
-      setShowGoal(true);
-    }
-  }, []);
-
-  const handleOnboardingComplete = async (selections?: any) => {
+  const handleOnboardingComplete = async (selections?: OnboardingSelections) => {
     try {
       if (selections) {
         await clientService.saveOnboardingInfo({
@@ -117,7 +107,7 @@ export default function Dashboard() {
         isOpen={showGoal && !showOnboarding} // Ensure they don't overlap
         onClose={() => setShowGoal(false)}
         onDashboard={() => setShowGoal(false)}
-        onContinue={(goal: any) => handleGoalComplete(Array.isArray(goal) ? goal.map(Number) : [Number(goal)])}
+        onContinue={(goal) => handleGoalComplete(Array.isArray(goal) ? goal.map(Number) : [Number(goal)])}
       />
     </div>
   );

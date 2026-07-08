@@ -13,11 +13,23 @@ interface Client {
   yelp?: string;
 }
 
+type EditClientPayload = {
+  business_name?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  google_maps_url?: string;
+  facebook_url?: string;
+  twitter_url?: string;
+  instagram_url?: string;
+  yelp_url?: string;
+};
+
 interface EditClientModalProps {
   client: Client;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (id: number, payload: any) => Promise<void>;
+  onSave: (id: number, payload: EditClientPayload) => Promise<void>;
 }
 
 const Input = ({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (val: string) => void; type?: string }) => (
@@ -37,7 +49,8 @@ export default function EditClientModal({ client, isOpen, onClose, onSave }: Edi
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setFormData({ ...client });
+    const timer = window.setTimeout(() => setFormData({ ...client }), 0);
+    return () => window.clearTimeout(timer);
   }, [client]);
 
   if (!isOpen) return null;
@@ -60,12 +73,11 @@ export default function EditClientModal({ client, isOpen, onClose, onSave }: Edi
       };
       await onSave(client.id, payload);
       onClose();
-    } catch (error) {
-      // Extract specific error message from backend if available
-      const axiosError = error as any;
-      const serverMessage = axiosError.response?.data?.message || axiosError.response?.data?.error;
-      
-      console.error("Update failed detail:", axiosError.response?.data || axiosError);
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { message?: string; error?: string } } } | undefined;
+      const serverMessage = axiosError?.response?.data?.message || axiosError?.response?.data?.error;
+
+      console.error("Update failed detail:", axiosError?.response?.data || error);
       alert(`Failed to update: ${serverMessage || "Check console for validation errors"}`);
     } finally {
       setLoading(false);

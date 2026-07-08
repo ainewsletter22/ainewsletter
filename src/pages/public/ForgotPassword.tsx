@@ -6,7 +6,7 @@ import email from '../../assets/email.svg';
 import view from '../../assets/transparency.svg';
 import unview from '../../assets/noTransparency.svg';
 import forgotImg from '../../assets/forgotPasswordHero.svg'; // the right-hand promo image (same across steps 1–3)
-import { authService } from "../../store/authService";
+import { authService } from "../../services/authService";
 
 // Lock icon — reused across all steps
 function LockIcon() {
@@ -45,8 +45,11 @@ function ForgotPassword() {
     try {
       await authService.forgotPassword(emailVal);
       setStep(2);
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to initiate reset.");
+    } catch (err: unknown) {
+      const errorMessage = typeof err === "object" && err !== null && "response" in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setError(errorMessage || "Failed to initiate reset.");
     } finally {
       setIsLoading(false);
     }
@@ -56,7 +59,7 @@ function ForgotPassword() {
     try {
       await authService.forgotPassword(emailVal);
       alert("Reset link resent!");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
     }
   };
@@ -71,8 +74,11 @@ function ForgotPassword() {
       // Note: Backend requires a token here. This usually comes from the URL.
       // We will need a ResetPassword component that takes token from useParams()
       setStep(4);
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to reset password.");
+    } catch (err: unknown) {
+      const errorMessage = typeof err === "object" && err !== null && "response" in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setError(errorMessage || "Failed to reset password.");
     } finally {
       setIsLoading(false);
     }

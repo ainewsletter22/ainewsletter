@@ -8,7 +8,7 @@ import unview from '../../assets/noTransparency.svg'
 import signInChatBubbleOne from '../../assets/signInChatBubbleOne.png'
 import signInChatBubbleTwo from '../../assets/signInChatBubbleTwo.svg'
 import signInChatBubbleThree from '../../assets/signInChatBubbleThree.svg'
-import { authService } from "../../store/authService";
+import { authService } from "../../services/authService";
 
 function SignIn() {
   const navigate = useNavigate();
@@ -36,9 +36,11 @@ function SignIn() {
     try {
       await authService.login(formData);
       navigate("/dashboard");
-    } catch (err: any) {
-      const message = err.response?.data?.message || "Invalid email or password.";
-      setError(message);
+    } catch (err: unknown) {
+      const errorMessage = typeof err === "object" && err !== null && "response" in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setError(errorMessage || "Invalid email or password.");
     } finally {
       setIsLoading(false);
     }

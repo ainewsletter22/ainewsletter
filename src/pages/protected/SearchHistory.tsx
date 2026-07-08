@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import DashboardHeader from "../../components/Dashboardheader";
-import { clientService } from "../../store/clientService";
+import { clientService } from "../../services/clientService";
 import { useNavigate } from "react-router";
 
 interface Job {
@@ -20,16 +20,16 @@ export default function SearchHistory() {
     const fetchJobs = async () => {
       try {
         const response = await clientService.getAllJobs();
-        // The backend typically wraps the array in a data property
-        const data = response.data || [];
-        setJobs(Array.isArray(data) ? data : []);
+        setJobs(Array.isArray(response) ? response : []);
       } catch (error) {
         console.error("Failed to fetch search history", error);
+        setJobs([]);
       } finally {
         setLoading(false);
       }
     };
-    fetchJobs();
+
+    void fetchJobs();
   }, []);
 
   const getStatusColor = (status: string) => {

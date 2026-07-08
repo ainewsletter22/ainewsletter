@@ -151,3 +151,14 @@ export const STOP_POST_OPTIONS = [
 export const FREQUENCY_UNITS = ["Hour", "Day", "Week", "Month", "Yearly"];
 
 export const SENDER_NAMES = ["Mandem tooneet", "Jamson Rason", "John Doe"];
+
+
+export const REGIONS = [
+  { code: "us-east-1", label: "North Virginia (us-east-1)", flag: "🇺🇸" },
+  { code: "us-west-2", label: "Oregon (us-west-2)", flag: "🇺🇸" },
+  { code: "eu-west-1", label: "Ireland (eu-west-1)", flag: "🇮🇪" },
+];
+
+export const SMTP_PROVIDERS = ["Send Grid", "Elastic Email", "Mailgun", "Custom SMTP"];
+
+export const MAX_BRANDS = 30;

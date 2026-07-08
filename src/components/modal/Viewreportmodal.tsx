@@ -94,7 +94,6 @@ export function ViewReportModal({ subject, onClose }: Props) {
                     <YAxis scale="log" domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "#9ca3af" }} tickLine={false} axisLine={false} />
                     <Tooltip
                       contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e7eb" }}
-                      formatter={(v: any, name: any) => v !== undefined ? [v.toLocaleString(), name === "opens" ? "Opens" : "Clicks"] : []}
                     />
                     <Area type="monotone" dataKey="opens" stroke="#3b82f6" strokeWidth={2} fill="url(#opensGrad)" dot={false} activeDot={{ r: 4 }} />
                     <Area type="monotone" dataKey="clicks" stroke="#10b981" strokeWidth={2} fill="url(#clicksGrad)" dot={false} activeDot={{ r: 4 }} />

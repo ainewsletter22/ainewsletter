@@ -1,5 +1,6 @@
-import { useState } from "react";
-import type { Newsletter, SendMethod } from "../../types/Types";
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import type { Brand, Newsletter, SendMethod } from "../../types/Types";
 import { NewslettersTab } from "./Newsletterstab";
 import { TemplatesTab } from "./Templatestab";
 import { DraftsTab } from "./Draftstab";
@@ -9,6 +10,7 @@ import { EmailComposerModal } from "../../components/modal/Emailcomposermodal";
 import { ViewReportModal } from "../../components/modal/Viewreportmodal";
 import { EmailPreviewModal } from "../../components/modal/Emailpreviewmodal";
 import DashboardHeader from "../../components/Dashboardheader";
+import { brandService } from "../../store/brandService";
 
 // ─── Active modal union ───────────────────────────────────────────────────────
 type ActiveModal =
@@ -22,7 +24,7 @@ type ActiveModal =
 type Tab = "newsletters" | "templates" | "drafts";
 
 // ─── Hero Banner ──────────────────────────────────────────────────────────────
-function HeroBanner({ onCreateNewsletter }: { onCreateNewsletter: () => void }) {
+function HeroBanner({ onCreateNewsletter, brandName }: { onCreateNewsletter: () => void; brandName?: string }) {
   return (
     <div
       className="rounded-2xl mx-0 mb-6 px-8 py-12 text-center"
@@ -31,14 +33,15 @@ function HeroBanner({ onCreateNewsletter }: { onCreateNewsletter: () => void }) 
       }}
     >
       <h1 className="text-3xl font-bold text-white mb-2 leading-tight">
-        Easily Send A.I Email Newsletters<br />
-        To Your Leads Without Any Hassle.
+        {brandName
+          ? `Create and manage newsletters for ${brandName}`
+          : "Easily Send A.I Email Newsletters\nTo Your Leads Without Any Hassle."}
       </h1>
       <button
         onClick={onCreateNewsletter}
         className="mt-6 inline-flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white font-semibold px-7 py-3 rounded-xl transition-colors shadow-lg"
       >
-        + Create A.I Newsletter
+         Create A.I Newsletter
       </button>
     </div>
   );
@@ -47,8 +50,30 @@ function HeroBanner({ onCreateNewsletter }: { onCreateNewsletter: () => void }) 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SendAINewsletterPage() {
+  const navigate = useNavigate();
+  const { brandId } = useParams();
   const [activeTab, setActiveTab] = useState<Tab>("newsletters");
   const [modal, setModal] = useState<ActiveModal>({ type: "none" });
+  const [brand, setBrand] = useState<Brand | null>(null);
+
+  useEffect(() => {
+    const loadBrand = async () => {
+      if (!brandId) {
+        setBrand(null);
+        return;
+      }
+
+      try {
+        const selectedBrand = await brandService.getBrand(Number(brandId));
+        setBrand(selectedBrand ?? null);
+      } catch (error) {
+        console.error("Failed to load brand for workspace", error);
+        setBrand(null);
+      }
+    };
+
+    void loadBrand();
+  }, [brandId]);
 
   const closeModal = () => setModal({ type: "none" });
 
@@ -70,6 +95,8 @@ export default function SendAINewsletterPage() {
     setModal({ type: "composer", prefilled });
   };
 
+  const isBrandWorkspace = Boolean(brandId);
+
   const TABS: { id: Tab; label: string }[] = [
     { id: "newsletters", label: "Newsletters" },
     { id: "templates", label: "Templates" },
@@ -80,25 +107,44 @@ export default function SendAINewsletterPage() {
     <div className="min-h-screen bg-gray-50">
       <DashboardHeader />
       <div className="max-w-5xl mx-auto px-6 py-6">
+        {isBrandWorkspace && (
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <button onClick={() => navigate("/news-letter/brands")} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
+              ← Back to Brands
+            </button>
+            <span className="text-sm font-semibold text-blue-600">{brand?.name || "Brand Workspace"}</span>
+          </div>
+        )}
+
         {/* Hero */}
-        <HeroBanner onCreateNewsletter={handleCreateNewsletter} />
+        <HeroBanner onCreateNewsletter={handleCreateNewsletter} brandName={brand?.name} />
 
         {/* Tabs */}
         <div className="border-b border-gray-200 mb-6">
-          <div className="flex gap-6">
-            {TABS.map(tab => (
+          <div className="flex items-center justify-between">
+            <div className="flex gap-6">
+              {TABS.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`pb-3 text-sm font-semibold transition-colors relative ${
+                    activeTab === tab.id
+                      ? "text-blue-600 border-b-2 border-blue-600 -mb-px"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {!isBrandWorkspace && (
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`pb-3 text-sm font-semibold transition-colors relative ${
-                  activeTab === tab.id
-                    ? "text-blue-600 border-b-2 border-blue-600 -mb-px"
-                    : "text-gray-500 hover:text-gray-700"
-                }`}
+                onClick={() => navigate("/news-letter/brands")}
+                className="pb-3 text-sm font-semibold text-gray-500 hover:text-blue-600 transition-colors flex items-center gap-1"
               >
-                {tab.label}
+                Manage Brands →
               </button>
-            ))}
+            )}
           </div>
         </div>
 
@@ -106,8 +152,8 @@ export default function SendAINewsletterPage() {
         {activeTab === "newsletters" && (
           <NewslettersTab
             onSendNew={() => setModal({ type: "send_method" })}
-            onViewReport={(n: any) => setModal({ type: "report", newsletter: n })}
-            onPreview={(n: any) => setModal({ type: "preview", newsletter: n })}
+            onViewReport={(newsletter) => setModal({ type: "report", newsletter })}
+            onPreview={(newsletter) => setModal({ type: "preview", newsletter })}
           />
         )}
         {activeTab === "templates" && (

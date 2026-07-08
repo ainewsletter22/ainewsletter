@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { authService } from "../../store/authService";
+import { authService } from "../../services/authService";
 import Logo from "../../components/Logo";
 
 export default function ConfirmEmail() {
@@ -21,9 +21,12 @@ export default function ConfirmEmail() {
         await authService.confirmEmail(token);
         setStatus("success");
         setMessage("Email confirmed successfully! You can now log in.");
-      } catch (err: any) {
+      } catch (err: unknown) {
         setStatus("error");
-        setMessage(err.response?.data?.message || "Verification failed.");
+        const errorMessage = typeof err === "object" && err !== null && "response" in err
+          ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+          : undefined;
+        setMessage(errorMessage || "Verification failed.");
       }
     };
 

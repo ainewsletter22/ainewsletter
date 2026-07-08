@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import type { ClientUpdatePayload } from "../types/domain";
 import clientBadge from "../assets/clientBadge.svg";
 import clientBadgeDark from "../assets/clientBadgeDark.svg";
 import emailBadge from "../assets/emailBadge.svg";
@@ -9,7 +10,7 @@ import importContact from "../assets/importContact.svg";
 import searchIcon from "../assets/searchIconBAW.svg";
 import trashIcon from "../assets/trashIcon.svg";
 import editIcon from "../assets/editIcon.svg"; // Assuming this asset exists
-import { clientService } from "../store/clientService";
+import { clientService } from "../services/clientService";
 import EditClientModal from "./modal/EditClientModal";
 
 // type ImportFlow = "idle" | "step1" | "file" | "paste" | "success";
@@ -45,7 +46,7 @@ function ClientDetailView({
   onAddClient: () => void;
   onImport: () => void;
   onDeleteClient: (id: number) => void;
-  onUpdateClient: (id: number, payload: any) => Promise<void>;
+  onUpdateClient: (id: number, payload: ClientUpdatePayload) => Promise<void>;
 }) {
   const [activeTab, setActiveTab] = useState<"clients" | "emails">("clients");
   const [search, setSearch] = useState("");
@@ -272,6 +273,7 @@ function ClientDetailView({
 
       {editingClient && (
         <EditClientModal
+          key={editingClient.id}
           isOpen={!!editingClient}
           client={editingClient}
           onClose={() => setEditingClient(null)}

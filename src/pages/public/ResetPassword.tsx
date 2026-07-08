@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Logo from "../../components/Logo";
-import { authService } from "../../store/authService";
+import { authService } from "../../services/authService";
 import view from '../../assets/transparency.svg';
 import unview from '../../assets/noTransparency.svg';
 
@@ -33,8 +33,11 @@ export default function ResetPassword() {
         token
       });
       setSuccess(true);
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to reset password. The link may have expired.");
+    } catch (err: unknown) {
+      const errorMessage = typeof err === "object" && err !== null && "response" in err
+        ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
+        : undefined;
+      setError(errorMessage || "Failed to reset password. The link may have expired.");
     } finally {
       setIsLoading(false);
     }

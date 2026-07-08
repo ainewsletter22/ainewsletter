@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
-import { clientService } from "../../store/clientService";
+import { clientService } from "../../services/clientService";
+import type { ApiListItem, OnboardingMeta, OnboardingSelections } from "../../types/domain";
 
 interface OnboardingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onContinue: () => void;
+  onContinue: (selections?: OnboardingSelections) => void;
 }
 
 function ChevronIcon() {
@@ -25,7 +26,7 @@ function SelectField({
   label: string;
   value: string;
   onChange: (v: string) => void;
-  options: { id: number | string; name: string }[];
+  options: ApiListItem[];
   placeholder?: string;
 }) {
   return (
@@ -62,12 +63,7 @@ export default function OnboardingModal({ isOpen, onClose, onContinue }: Onboard
   const [role, setRole] = useState("");
   const [companySize, setCompanySize] = useState("");
 
-  const [meta, setMeta] = useState<{
-    purposes: any[];
-    kinds: any[];
-    sizes: any[];
-    roles: any[];
-  }>({
+  const [meta, setMeta] = useState<Omit<OnboardingMeta, "goals">>({
     purposes: [],
     kinds: [],
     sizes: [],
@@ -88,6 +84,14 @@ export default function OnboardingModal({ isOpen, onClose, onContinue }: Onboard
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const selectedValues = {
+    company_kind_id: Number(companyType),
+    role_in_company_id: Number(role),
+    company_size_id: Number(companySize),
+    app_purpose_id: Number(usage),
+  };
+  const hasAllSelections = [companyType, role, companySize, usage].every(Boolean);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -141,7 +145,7 @@ export default function OnboardingModal({ isOpen, onClose, onContinue }: Onboard
             Skip
           </button>
           <button
-            onClick={onContinue}
+            onClick={() => onContinue(hasAllSelections ? selectedValues : undefined)}
             className="px-8 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg text-sm transition-colors flex items-center gap-2"
           >
             Continue <span className="text-base">→</span>
