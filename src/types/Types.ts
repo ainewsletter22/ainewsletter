@@ -58,8 +58,15 @@ export interface AIAgentForm {
   tone: string;
 }
 
+export interface HeadlineItem {
+  id?: number;
+  name: string;
+  brandId?: number;
+  status?: number;
+}
+
 export interface AIContentForm {
-  headlines: string[];
+  headlines: HeadlineItem[];
   currentHeadline: string;
   description: string;
   productLink: string;
@@ -69,7 +76,10 @@ export interface AIScheduleForm {
   campaignFrequency: boolean;
   postEveryAmount: number;
   postEveryUnit: string;
+  postEveryId?: number;
+  durationId?: number;
   stopPost: string;
+  stopPostId?: number;
   regenerateSubject: boolean;
   regenerateBody: boolean;
   startDate: string;
@@ -85,6 +95,25 @@ export interface ComposeForm {
   subject: string;
   preview: string;
   body: string;
+}
+
+export interface ComposerAttachment {
+  id: string;
+  name: string;
+  url: string;
+  mimeType: string;
+  assetId?: string | number;
+}
+
+export interface TemplateLayoutBlock {
+  id: string;
+  role: "headline" | "body" | "image" | "footer";
+  label: string;
+  text: string;
+  imageUrl?: string;
+  imageWidth?: string;
+  imageOffsetX?: number;
+  placeholder?: string;
 }
 
 export interface ConfirmForm {
@@ -132,13 +161,16 @@ export interface BrandDomain {
   dkim: DNSRecord;
   spf: DNSRecord[];
   dmarc: DNSRecord;
+  cnames?: DNSRecord[];
 }
 
 export interface SMTPSettings {
   provider: string;
+  providerId?: number;
   host: string;
   port: string;
   security: "SSL" | "TLS";
+  securityId?: number;
   username: string;
   password?: string;
 }
@@ -174,6 +206,7 @@ export interface Brand {
   fromEmail: string;
   replyToEmail: string;
   logo?: string;
+  resendApiKey?: string;
   dateCreated: string;
   totalCampaigns: number;
   sendsVia: string;
@@ -189,5 +222,6 @@ export interface BrandFormValues {
   fromName: string;
   fromEmail: string;
   replyToEmail: string;
-  logo?: string;
+  resendApiKey?: string;
+  logo?: File | string;
 }

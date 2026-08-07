@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { Newsletter, NewsletterStatus } from "../../types/Types";
-import { MOCK_NEWSLETTERS } from "../../types/Mockdata";
 import searchIcon from "../../assets/searchIconBAW.svg";
 import stars from "../../assets/stars.svg";
 import copyIcon from "../../assets/copyIcon.svg";
@@ -33,7 +32,7 @@ function UpgradeBanner() {
 
 
 export function NewslettersTab({ onSendNew, onViewReport, onPreview }: Props) {
-  const [newsletters, setNewsletters] = useState<Newsletter[]>(MOCK_NEWSLETTERS);
+  const [newsletters, setNewsletters] = useState<Newsletter[]>([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<number[]>([]);
 
@@ -125,7 +124,7 @@ export function NewslettersTab({ onSendNew, onViewReport, onPreview }: Props) {
                 </td>
                 <td className="px-4 py-4">
                   <div className="flex items-start gap-2">
-                    <div className="w-5 h-5 mt-0.5 flex-shrink-0">
+                    <div className="w-5 h-5 mt-0.5 shrink-0">
                       <img src={stars} alt="" />
                     </div>
                     <div>

@@ -12,10 +12,10 @@ interface Props {
 
 function BrandIdentityForm({ initial, onCancel, onSave, saving, saveLabel = "Save Changes" }: Props) {
   const [values, setValues] = useState<BrandFormValues>(initial);
-  const [preview, setPreview] = useState<string | undefined>(initial.logo);
+  const [preview, setPreview] = useState<string | undefined>(typeof initial.logo === 'string' ? initial.logo : undefined);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const set = (key: keyof BrandFormValues) => (e: ChangeEvent<HTMLInputElement>) =>
+  const set = (key: Exclude<keyof BrandFormValues, 'logo'>) => (e: ChangeEvent<HTMLInputElement>) =>
     setValues(v => ({ ...v, [key]: e.target.value }));
 
   const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
@@ -23,7 +23,7 @@ function BrandIdentityForm({ initial, onCancel, onSave, saving, saveLabel = "Sav
     if (!file) return;
     const url = URL.createObjectURL(file);
     setPreview(url);
-    setValues(v => ({ ...v, logo: url }));
+    setValues(v => ({ ...v, logo: file }));
   };
 
   return (
@@ -59,6 +59,15 @@ function BrandIdentityForm({ initial, onCancel, onSave, saving, saveLabel = "Sav
             value={values.replyToEmail}
             onChange={set("replyToEmail")}
             className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Resend API key</label>
+          <input
+            value={values.resendApiKey ?? ""}
+            onChange={set("resendApiKey")}
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Optional: API key for resend service"
           />
         </div>
         <div>

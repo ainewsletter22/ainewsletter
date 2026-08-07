@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import trashIcon from "../../assets/trashIcon.svg";
 import { Btn } from "../Modalshells";
-import { REGIONS, SMTP_PROVIDERS } from "../../types/Mockdata";
+import { REGIONS } from "../../types/Mockdata";
+import { getApiErrorMessage } from "../../utils/api";
+import logo from "../../assets/mainLogo.png";
 import type {
   BrandDomain,
   DNSRecord,
@@ -12,11 +14,26 @@ import type {
   FooterSettings,
 } from "../../types/Types";
 
+type RegionOption = {
+  id: number;
+  name: string;
+};
+
 // ─── Shared bits ────────────────────────────────────────────────────────────
-function DnsTable({ title, records, onCopy, copied }: { title?: string; records: DNSRecord[]; onCopy: (value: string, key: string) => void; copied: string | null }) {
+function DnsTable({ title, records, onCopy, copied }: { title?: string; records?: DNSRecord[]; onCopy: (value: string, key: string) => void; copied: string | null }) {
+  const safeRecords = (records ?? []).filter((r): r is DNSRecord => Boolean(r && r.type && r.name && r.content && r.ttl));
+
+  if (safeRecords.length === 0) {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-5 text-sm text-gray-500 mb-2">
+        No DNS records are available for this domain yet.
+      </div>
+    );
+  }
+
   return (
     <div className="border border-gray-100 rounded-lg overflow-hidden mb-2 overflow-x-auto">
-      <table className="w-full min-w-[600px]">
+      <table className="w-full min-w-150">
         <thead>
           <tr className="bg-gray-50 border-b border-gray-100">
             {["Brand Name", "Name", "Content", "TTL", "Priority"].map(h => (
@@ -27,7 +44,7 @@ function DnsTable({ title, records, onCopy, copied }: { title?: string; records:
           </tr>
         </thead>
         <tbody>
-          {records.map((r, i) => {
+          {records?.map((r, i) => {
             const nameKey = `${title ?? r.type}-name-${i}`;
             const contentKey = `${title ?? r.type}-content-${i}`;
             return (
@@ -35,13 +52,13 @@ function DnsTable({ title, records, onCopy, copied }: { title?: string; records:
                 <td className="px-4 py-2 text-sm text-blue-600 font-medium">{r.type}</td>
                 <td className="px-4 py-2 text-sm text-gray-600">
                   <button onClick={() => onCopy(r.name, nameKey)} className="flex items-center gap-1 hover:text-blue-600">
-                    <span className="truncate max-w-[160px]">{r.name}</span>
+                    <span className="truncate max-w-40">{r.name}</span>
                     <span>{copied === nameKey ? "✓" : "⧉"}</span>
                   </button>
                 </td>
                 <td className="px-4 py-2 text-sm text-gray-600">
                   <button onClick={() => onCopy(r.content, contentKey)} className="flex items-center gap-1 hover:text-blue-600">
-                    <span className="truncate max-w-[160px]">{r.content}</span>
+                    <span className="truncate max-w-40">{r.content}</span>
                     <span>{copied === contentKey ? "✓" : "⧉"}</span>
                   </button>
                 </td>
@@ -56,35 +73,166 @@ function DnsTable({ title, records, onCopy, copied }: { title?: string; records:
   );
 }
 
+// NOTE: flag *emoji* (🇺🇸) are actually two stacked "regional indicator"
+// letters under the hood. Many fonts/OSes (Windows especially) don't have a
+// flag glyph for that sequence and just render the two letters as plain text
+// ("US"). That's not a matching bug — it's a rendering limitation. To get a
+// flag that reliably looks like a flag everywhere, we render an actual flag
+// image (via flagcdn.com) instead of relying on emoji font support.
+
+// Extracts a plain 2-letter ISO 3166-1 country code from whatever the source
+// data gives us — could already be a code ("US"), or a flag emoji ("🇺🇸").
+function extractIsoCode(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+
+  // Already a plain 2-letter code.
+  if (/^[a-zA-Z]{2}$/.test(trimmed)) return trimmed.toUpperCase();
+
+  // A flag emoji: each character is a regional-indicator symbol in the
+  // range U+1F1E6–U+1F1FF, which maps back to A–Z by subtracting 127397.
+  const chars = Array.from(trimmed);
+  if (chars.length === 2 && chars.every(ch => {
+    const cp = ch.codePointAt(0) ?? 0;
+    return cp >= 0x1f1e6 && cp <= 0x1f1ff;
+  })) {
+    return chars.map(ch => String.fromCharCode((ch.codePointAt(0) ?? 0) - 127397)).join("");
+  }
+
+  return null;
+}
+
+// Strips accents/diacritics so "São Paulo" and "sao paulo" compare equal.
+function normalizeForMatch(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+// A small flag image, rendered from an ISO country code. Falls back to a
+// plain globe icon if we couldn't resolve a code at all.
+function FlagIcon({ code, className = "w-5 h-3.5 rounded-xs object-cover inline-block align-middle" }: { code: string | null; className?: string }) {
+  if (!code) {
+    return (
+      <svg className={className.replace("object-cover", "")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6}>
+        <circle cx="12" cy="12" r="9" />
+        <path strokeLinecap="round" d="M3 12h18" />
+        <path strokeLinecap="round" d="M12 3c2.4 2.6 3.75 5.9 3.75 9S14.4 18.4 12 21c-2.4-2.6-3.75-5.9-3.75-9S9.6 5.6 12 3z" />
+      </svg>
+    );
+  }
+  const lower = code.toLowerCase();
+  return (
+    <img
+      src={`https://flagcdn.com/24x18/${lower}.png`}
+      srcSet={`https://flagcdn.com/48x36/${lower}.png 2x`}
+      alt={code}
+      className={className}
+    />
+  );
+}
+
+// Direct keyword → ISO code lookup for common AWS SES region names. This is
+// the primary matcher since it doesn't depend on Mockdata's REGIONS array
+// lining up character-for-character with whatever the backend calls things.
+const REGION_KEYWORD_TO_ISO: Array<[string, string]> = [
+  ["virginia", "US"], ["ohio", "US"], ["oregon", "US"], ["california", "US"],
+  ["us east", "US"], ["us west", "US"], ["us-east", "US"], ["us-west", "US"], ["united states", "US"],
+  ["canada", "CA"],
+  ["ireland", "IE"],
+  ["london", "GB"], ["united kingdom", "GB"],
+  ["frankfurt", "DE"], ["germany", "DE"],
+  ["paris", "FR"], ["france", "FR"],
+  ["milan", "IT"], ["italy", "IT"],
+  ["zurich", "CH"], ["switzerland", "CH"],
+  ["stockholm", "SE"], ["sweden", "SE"],
+  ["madrid", "ES"], ["spain", "ES"],
+  ["sao paulo", "BR"], ["brazil", "BR"],
+  ["tokyo", "JP"], ["osaka", "JP"], ["japan", "JP"],
+  ["seoul", "KR"], ["korea", "KR"],
+  ["singapore", "SG"],
+  ["mumbai", "IN"], ["hyderabad", "IN"], ["india", "IN"],
+  ["sydney", "AU"], ["melbourne", "AU"], ["australia", "AU"],
+  ["cape town", "ZA"], ["south africa", "ZA"],
+  ["bahrain", "BH"],
+  ["uae", "AE"], ["dubai", "AE"],
+  ["jakarta", "ID"], ["indonesia", "ID"],
+  ["hong kong", "HK"],
+  ["beijing", "CN"], ["ningxia", "CN"], ["china", "CN"],
+];
+
 // ─── Add domain ─────────────────────────────────────────────────────────────
 
 type DomainStep = "list" | "form" | "verify";
 
 interface AddDomainSectionProps {
   domains: BrandDomain[];
-  onAddDomain: (name: string, region: string) => Promise<BrandDomain | undefined>;
+  regions: RegionOption[];
+  onAddDomain: (name: string, regionId: number) => Promise<BrandDomain | undefined>;
   onDeleteDomain: (domainId: number) => void;
   onVerifyDomain: (domainId: number) => Promise<void>;
 }
 
-export function AddDomainSection({ domains, onAddDomain, onDeleteDomain, onVerifyDomain }: AddDomainSectionProps) {
+export function AddDomainSection({ domains, regions, onAddDomain, onDeleteDomain, onVerifyDomain }: AddDomainSectionProps) {
   const [step, setStep] = useState<DomainStep>(domains.length ? "list" : "form");
   const [name, setName] = useState("");
-  const [region, setRegion] = useState(REGIONS[0].code);
+  const [region, setRegion] = useState<string>(regions.length > 0 ? regions[0].id.toString() : "");
   const [pendingDomain, setPendingDomain] = useState<BrandDomain | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
+  const [serverError, setServerError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
-  const regionLabel = (code: string) => REGIONS.find(r => r.code === code)?.label ?? code;
+  useEffect(() => {
+    if (!region && regions.length > 0) {
+      setRegion(regions[0].id.toString());
+    }
+  }, [regions, region]);
+
+  // Returns a plain ISO country code (e.g. "US") for a given region label,
+  // or null if nothing matched — FlagIcon renders a globe icon for null.
+  const findRegionIsoCode = (label: string): string | null => {
+    const normalizedLabel = normalizeForMatch(label);
+
+    // 1. Keyword match first — most reliable since it doesn't depend on
+    //    Mockdata's REGIONS array lining up with the real region names.
+    const keywordMatch = REGION_KEYWORD_TO_ISO.find(([keyword]) => normalizedLabel.includes(keyword));
+    if (keywordMatch) return keywordMatch[1];
+
+    // 2. Fall back to matching against the REGIONS mock metadata.
+    const match = REGIONS.find(regionMeta => {
+      const metaLabel = normalizeForMatch(regionMeta.label);
+      const metaCode = normalizeForMatch(regionMeta.code);
+      const metaName = metaLabel.split(" (")[0].trim();
+      return (
+        normalizedLabel.includes(metaCode) || metaCode.includes(normalizedLabel) ||
+        normalizedLabel.includes(metaLabel) || metaLabel.includes(normalizedLabel) ||
+        normalizedLabel.includes(metaName) || metaName.includes(normalizedLabel)
+      );
+    });
+    if (match) return extractIsoCode(match.flag);
+
+    return null;
+  };
+
+  const selectedRegion = regions.find(r => r.id.toString() === region);
+  const selectedRegionIsoCode = selectedRegion ? findRegionIsoCode(selectedRegion.name) : null;
 
   const handleAddDomain = async () => {
-    if (!name.trim()) return;
-    const domain = await onAddDomain(name.trim(), regionLabel(region));
-    if (domain) {
-      setPendingDomain(domain);
-      setStep("verify");
+    if (!name.trim() || !region) return;
+    setServerError(null);
+
+    try {
+      const domain = await onAddDomain(name.trim(), Number(region));
+      if (domain) {
+        setPendingDomain(domain);
+        setStep("verify");
+      }
+    } catch (error) {
+      setServerError(getApiErrorMessage(error, "Unable to add domain."));
     }
   };
 
@@ -121,17 +269,17 @@ export function AddDomainSection({ domains, onAddDomain, onDeleteDomain, onVerif
                 <div>
                   <label className="block text-sm font-semibold text-gray-900 mb-2">Region</label>
                   <div className="relative">
-                    <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-base leading-none">
-                      {REGIONS.find(r => r.code === region)?.flag ?? "🇺🇸"}
+                    <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 flex items-center">
+                      <FlagIcon code={selectedRegionIsoCode} className="w-5 h-3.5 rounded-xs object-cover" />
                     </span>
                     <select
                       value={region}
                       onChange={e => setRegion(e.target.value)}
                       className="w-full appearance-none bg-gray-100 rounded-xl pl-10 pr-9 py-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
                     >
-                      {REGIONS.map(r => (
-                        <option key={r.code} value={r.code}>
-                          {r.label}
+                      {regions.map(r => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
                         </option>
                       ))}
                     </select>
@@ -142,41 +290,69 @@ export function AddDomainSection({ domains, onAddDomain, onDeleteDomain, onVerif
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowAdvanced(prev => !prev)}
-                className="flex items-center gap-1.5 text-sm font-semibold text-gray-900 hover:text-blue-600 mb-5"
-              >
-                <svg className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-                Advanced options
-              </button>
+              <div className="flex items-center justify-start gap-5 mb-5">
+                <span className="text-sm font-semibold text-gray-900">Advanced options</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={showAdvanced}
+                  onClick={() => setShowAdvanced(prev => !prev)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    showAdvanced ? "bg-blue-600" : "bg-gray-200"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                      showAdvanced ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
 
-              {showAdvanced && (
-                <div className="mb-5 rounded-2xl border border-gray-200 bg-gray-50 p-5">
-                  <p className="text-sm font-semibold text-gray-800 mb-3">Advanced options</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="block text-sm text-gray-600">DNS TTL</label>
-                      <input
-                        value="3600"
-                        readOnly
-                        className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-white"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="block text-sm text-gray-600">Priority</label>
-                      <input
-                        value="Auto"
-                        readOnly
-                        className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-white"
-                      />
-                    </div>
+              <div className={showAdvanced ? "" : "opacity-50 pointer-events-none"}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-gray-900">
+                      Custom Return-Path
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="send"
+                      disabled={!showAdvanced}
+                      className="w-full border border-gray-200 rounded-md px-4 py-4 text-sm bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-sm font-semibold text-gray-900">
+                      Tracking Subdomain
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Links"
+                      disabled={!showAdvanced}
+                      className="w-full border border-gray-200 rounded-md px-4 py-4 text-sm bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+                    />
                   </div>
                 </div>
-              )}
 
+                <div className="space-y-2 mb-5">
+                  <p className="text-sm font-semibold text-gray-900 my-4">Tracking options</p>
+                  <label className="flex items-center gap-2 text-sm text-gray-600">
+                    <input
+                      type="checkbox"
+                      disabled={!showAdvanced}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Enable click tracking
+                  </label>
+                </div>
+              </div>
+
+              {serverError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 mb-4">
+                  {serverError}
+                </div>
+              )}
               <div className="flex items-center gap-3 flex-wrap">
                 <button
                   onClick={handleAddDomain}
@@ -200,8 +376,10 @@ export function AddDomainSection({ domains, onAddDomain, onDeleteDomain, onVerif
                   <div>
                     <p className="text-sm leading-tight">
                       <span className="text-blue-600 font-semibold">Your Name</span>{" "}
-                      <span className="text-gray-400 text-xs">&lt;youremail@</span>
-                      <span className="inline-block h-3 w-16 bg-blue-100 rounded align-middle" />
+                      <span className="text-gray-400 text-xs mx-2">&lt;youremail@</span>
+                      <span className="inline-block h-5 min-w-16 bg-blue-100 rounded px-1 text-xs align-middle text-gray-500">
+                        {name}
+                      </span>
                     </p>
                     <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
                       to me
@@ -237,7 +415,8 @@ export function AddDomainSection({ domains, onAddDomain, onDeleteDomain, onVerif
           </p>
           <p className="text-xs text-gray-500 mb-2">Domain name and region for your sending and receiving.</p>
           <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-full px-3 py-1 text-sm text-gray-700">
-            🇺🇸 {pendingDomain.name}
+            <FlagIcon code={selectedRegionIsoCode} className="w-4 h-2.75 rounded-xs object-cover" />
+            {pendingDomain.name}
           </span>
         </div>
 
@@ -260,6 +439,21 @@ export function AddDomainSection({ domains, onAddDomain, onDeleteDomain, onVerif
           <span className="underline mr-1">DMARC</span> <span className="text-gray-400 font-normal text-xs ">Optional</span>
         </p>
         <DnsTable records={[pendingDomain.dmarc]} onCopy={handleCopy} copied={copied} />
+
+        <p className="text-base font-bold mt-6 mb-2">CNAME</p>
+        <DnsTable records={pendingDomain.cnames} onCopy={handleCopy} copied={copied} />
+
+        <div className="mt-4 mb-6">
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={pendingDomain.enableReceiving}
+              readOnly
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            Enable Receiving
+          </label>
+        </div>
 
         <button
           onClick={async () => {
@@ -304,7 +498,7 @@ export function AddDomainSection({ domains, onAddDomain, onDeleteDomain, onVerif
       </div>
 
       <div className="border border-gray-100 rounded-xl overflow-hidden overflow-x-auto">
-        <table className="w-full min-w-[650px]">
+        <table className="w-full min-w-162.5">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-100">
               <th className="px-4 py-3 w-10">
@@ -371,26 +565,63 @@ export function AddDomainSection({ domains, onAddDomain, onDeleteDomain, onVerif
 
 interface SmtpSettingsSectionProps {
   smtp: SMTPSettings;
+  smtpProviders: { id: number; name: string }[];
+  securityProtocols: { id: number; name: string }[];
   onSave: (smtp: SMTPSettings) => void;
   onCancel: () => void;
   saving?: boolean;
+  error?: string | null;
 }
 
-export function SmtpSettingsSection({ smtp, onSave, onCancel, saving }: SmtpSettingsSectionProps) {
-  const [values, setValues] = useState<SMTPSettings>(smtp);
+export function SmtpSettingsSection({ smtp, smtpProviders, securityProtocols, onSave, onCancel, saving, error }: SmtpSettingsSectionProps) {
+  const [values, setValues] = useState<SMTPSettings>(() => ({
+    provider: smtp.provider || smtpProviders[0]?.name || "",
+    providerId: smtp.providerId,
+    host: smtp.host || "",
+    port: smtp.port || "",
+    security: smtp.security || "SSL",
+    securityId: smtp.securityId,
+    username: smtp.username || "",
+    password: smtp.password,
+  }));
+
+  useEffect(() => {
+    setValues({
+      provider: smtp.provider || smtpProviders[0]?.name || "",
+      providerId: smtp.providerId,
+      host: smtp.host || "",
+      port: smtp.port || "",
+      security: smtp.security || "SSL",
+      securityId: smtp.securityId,
+      username: smtp.username || "",
+      password: smtp.password,
+    });
+  }, [smtp, smtpProviders, securityProtocols]);
 
   return (
     <div>
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 mb-6">
+          {error}
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Choose SMTP Provider</label>
           <select
-            value={values.provider}
-            onChange={e => setValues(v => ({ ...v, provider: e.target.value }))}
+            value={values.providerId ?? ""}
+            onChange={e => {
+              const providerId = Number(e.target.value);
+              const providerName = smtpProviders.find(item => item.id === providerId)?.name ?? "";
+              setValues(v => ({ ...v, provider: providerName, providerId }));
+            }}
             className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            {SMTP_PROVIDERS.map(p => (
-              <option key={p}>{p}</option>
+            <option value="">Select provider</option>
+            {smtpProviders.map(item => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
             ))}
           </select>
         </div>
@@ -415,12 +646,20 @@ export function SmtpSettingsSection({ smtp, onSave, onCancel, saving }: SmtpSett
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">SSL / TLS</label>
           <select
-            value={values.security}
-            onChange={e => setValues(v => ({ ...v, security: e.target.value as SMTPSettings["security"] }))}
+            value={values.securityId ?? ""}
+            onChange={e => {
+              const securityId = Number(e.target.value);
+              const securityName = securityProtocols.find(item => item.id === securityId)?.name ?? "";
+              setValues(v => ({ ...v, security: securityName as SMTPSettings["security"], securityId }));
+            }}
             className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="SSL">SSL</option>
-            <option value="TLS">TLS</option>
+            <option value="">Select protocol</option>
+            {securityProtocols.map(item => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
           </select>
         </div>
         <div>
@@ -467,6 +706,10 @@ interface PrivacySectionProps {
 
 export function PrivacySection({ privacy, loginEmail, onSave, onCancel, saving }: PrivacySectionProps) {
   const [values, setValues] = useState<PrivacySettings>(privacy);
+
+  useEffect(() => {
+    setValues(privacy);
+  }, [privacy]);
 
   return (
     <div>
@@ -537,9 +780,13 @@ export function SendingLimitSection({ limit, onSave, onCancel, saving }: Sending
   const [values, setValues] = useState<SendingLimitSettings>(limit);
   const isUnlimited = values.limitType === "Unlimited";
 
+  useEffect(() => {
+    setValues(limit);
+  }, [limit]);
+
   return (
     <div>
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-2">Choose Limit</label>
           <select
@@ -561,15 +808,6 @@ export function SendingLimitSection({ limit, onSave, onCancel, saving }: Sending
             onChange={e => setValues(v => ({ ...v, emailsPerMonth: Number(e.target.value) }))}
             placeholder="eg. 100000"
             className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-400"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-2">Currently used</label>
-          <input
-            type="number"
-            value={values.currentlyUsed}
-            onChange={e => setValues(v => ({ ...v, currentlyUsed: Number(e.target.value) }))}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
         <div>
@@ -609,11 +847,23 @@ interface FooterSettingsSectionProps {
   onCancel: () => void;
   saving?: boolean;
 }
- 
+
 
 export function FooterSettingsSection({ footer, onSave, onCancel, saving }: FooterSettingsSectionProps) {
-  const [values, setValues] = useState<FooterSettings>(footer);
- 
+  const getInitialValues = (initial: FooterSettings): FooterSettings => ({
+    unsubscribeText: initial.unsubscribeText ?? "",
+    companyName: initial.companyName ?? "",
+    address: initial.address ?? "",
+    cityStateZip: initial.cityStateZip ?? "",
+    removeBadge: initial.removeBadge ?? false,
+  });
+
+  const [values, setValues] = useState<FooterSettings>(() => getInitialValues(footer));
+
+  useEffect(() => {
+    setValues(getInitialValues(footer));
+  }, [footer]);
+
   return (
     <div className="rounded-2xl bg-white">
         <div className="grid grid-cols-1 lg:grid-cols-[0.9fr_0.9fr_1.2fr] gap-5 items-start">
@@ -622,39 +872,39 @@ export function FooterSettingsSection({ footer, onSave, onCancel, saving }: Foot
             <label className="block text-sm font-bold text-gray-900 mb-2">Unsubscribe information</label>
             <div className="rounded-2xl bg-gray-100 p-4">
               <textarea
-                value={values.unsubscribeText}
+                value={values.unsubscribeText ?? ""}
                 onChange={e => setValues(v => ({ ...v, unsubscribeText: e.target.value }))}
                 rows={5}
                 className="w-full bg-transparent text-sm text-gray-500 leading-6 focus:outline-none resize-none"
               />
             </div>
           </div>
- 
+
           {/* Address */}
           <div>
             <label className="block text-sm font-bold text-gray-900 mb-2">Address</label>
             <div className="rounded-2xl bg-gray-100 p-4">
               <input
-                value={values.companyName}
+                value={values.companyName ?? ""}
                 onChange={e => setValues(v => ({ ...v, companyName: e.target.value }))}
                 placeholder="Company Name"
                 className="w-full bg-transparent text-sm text-gray-800 leading-6 focus:outline-none block"
               />
               <input
-                value={values.address}
+                value={values.address ?? ""}
                 onChange={e => setValues(v => ({ ...v, address: e.target.value }))}
                 placeholder="99 Street Address"
                 className="w-full bg-transparent text-sm text-gray-800 leading-6 focus:outline-none block"
               />
               <input
-                value={values.cityStateZip}
+                value={values.cityStateZip ?? ""}
                 onChange={e => setValues(v => ({ ...v, cityStateZip: e.target.value }))}
                 placeholder="City, STATE 000-000"
                 className="w-full bg-transparent text-sm text-gray-800 leading-6 focus:outline-none block"
               />
             </div>
           </div>
- 
+
           {/* Preview */}
           <div className="rounded-2xl bg-blue-50/70 p-4">
             <div className="flex items-center gap-2.5 mb-1">
@@ -673,15 +923,15 @@ export function FooterSettingsSection({ footer, onSave, onCancel, saving }: Foot
                 </p>
               </div>
             </div>
- 
+
             <div className="border-t border-blue-100 my-3" />
- 
+
             <div className="h-2 bg-blue-100 rounded-full w-1/2 mx-auto mb-4" />
- 
+
             <div className="text-center text-[12px] text-gray-700 leading-6 whitespace-pre-line">
               {values.unsubscribeText}
             </div>
- 
+
             <div className="text-center text-[12px] text-gray-700 leading-6 mt-3">
               {values.companyName}
               <br />
@@ -689,28 +939,28 @@ export function FooterSettingsSection({ footer, onSave, onCancel, saving }: Foot
               <br />
               {values.cityStateZip}
             </div>
- 
+
             {!values.removeBadge && (
               <div className="mt-4 flex justify-center">
-                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-600 bg-white px-3 py-1 rounded-full shadow-sm">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-600 bg-linear-to-r from-blue-100 to-white px-3 py-1 rounded-full shadow-sm border border-blue-500">
                   Powered by
                   <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-blue-600 text-white text-[9px] font-bold">
-                    N
+                   <img src={logo} alt="" />
                   </span>
-                  Ai Newsletter
+                  <span className="text-black">Ai Newsletter</span>
                 </span>
               </div>
             )}
           </div>
         </div>
- 
+
         <div className="mt-6 flex items-center gap-4">
           <label className="flex items-center gap-3 text-sm font-bold text-gray-900">
             Remove Ai newsletter Badge.
             <span className="relative inline-flex items-center">
               <input
                 type="checkbox"
-                checked={values.removeBadge}
+                checked={Boolean(values.removeBadge)}
                 onChange={e => setValues(v => ({ ...v, removeBadge: e.target.checked }))}
                 className="sr-only"
               />
@@ -723,7 +973,7 @@ export function FooterSettingsSection({ footer, onSave, onCancel, saving }: Foot
             </span>
           </label>
         </div>
- 
+
         <div className="flex gap-3 mt-6">
           <Btn variant="outline" onClick={onCancel}>
             ✕ Cancel

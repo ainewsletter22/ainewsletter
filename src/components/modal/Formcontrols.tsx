@@ -34,9 +34,9 @@ export function Select({ value, onChange, options, className = "", placeholder }
       </button>
       {open && (
         <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-          {options.map(opt => (
+          {options.map((opt, idx) => (
             <button
-              key={opt}
+              key={`${opt}-${idx}`}
               type="button"
               onClick={() => { onChange(opt); setOpen(false); }}
               className={`w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 hover:text-blue-700 transition-colors first:rounded-t-xl last:rounded-b-xl ${value === opt ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-700"}`}

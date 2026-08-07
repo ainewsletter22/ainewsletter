@@ -38,7 +38,10 @@ let nextDomainId = 1;
 const delay = <T,>(value: T, ms = 350): Promise<T> =>
   new Promise(resolve => setTimeout(() => resolve(value), ms));
 
-const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
+const clone = <T,>(value: T): T => {
+  if (value === undefined) return value as any;
+  return JSON.parse(JSON.stringify(value));
+};
 
 function defaultDomainRecords(domainName: string) {
   const slug = domainName.split(".")[0];
