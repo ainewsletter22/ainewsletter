@@ -13,25 +13,19 @@ import ResetPassword from './pages/public/ResetPassword';
 import ProtectedRoute from './components/ProtectedRoute';
 import PublicRoute from './components/PublicRoute';
 import { useEffect } from 'react';
-import { authService } from './services/authService';
 import { useAuthStore } from './store/useAuthStore';
-
+import { loadPersistedAuth } from './services/authService';
 
 function App() {
   const setInitialized = useAuthStore((s) => s.setInitialized);
   const isInitialized = useAuthStore((s) => s.isInitialized);
 
   useEffect(() => {
-    // Try to rehydrate session using httpOnly refresh cookie on app load
-    (async () => {
-      try {
-        await authService.refresh();
-      } catch (e) {
-        // ignore - user will be treated as unauthenticated
-      } finally {
-        setInitialized(true);
-      }
-    })();
+    const stored = loadPersistedAuth();
+    if (stored?.token) {
+      useAuthStore.getState().setAuth(stored.token, stored.user);
+    }
+    setInitialized(true);
   }, [setInitialized]);
 
   if (!isInitialized) {

@@ -6,10 +6,12 @@ import AddClientModal from "../../components/modal/AddClientModal";
 import ImportStep1 from "../../components/modal/ImportStep1";
 import ImportStepFile from "../../components/modal/ImportStepFile";
 import ImportStepPaste from "../../components/modal/ImportStepPaste";
+import ImportStepReview from "../../components/modal/ImportStepReview";
 import ImportSuccessModal from "../../components/modal/ImportSuccessModal";
 import DashboardHeader from "../../components/Dashboardheader";
 import { clientService } from "../../services/clientService";
-import type { ClientUpdatePayload, ManagedClient, SavedClientRecord } from "../../types/domain";
+import type { ClientUpdatePayload, ManagedClient, ParsedImportData, SavedClientRecord } from "../../types/domain";
+import { buildClientPayloads } from "../../utils/importParser";
 
 interface Folder {
   id: number;
@@ -18,7 +20,9 @@ interface Folder {
   createdDate: string;
 }
 
-type ImportFlow = "idle" | "step1" | "file" | "paste" | "success";
+type ImportFlow = "idle" | "step1" | "file" | "paste" | "review" | "success";
+
+type ImportSource = "file" | "paste" | null;
 
 function mapSavedClient(c: SavedClientRecord): ManagedClient {
   return {
@@ -45,7 +49,9 @@ export default function ManageClients() {
   const [showAddClient, setShowAddClient] = useState(false);
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
   const [importFlow, setImportFlow] = useState<ImportFlow>("idle");
+  const [importSource, setImportSource] = useState<ImportSource>(null);
   const [importCount, setImportCount] = useState(0);
+  const [importData, setImportData] = useState<ParsedImportData | null>(null);
 
   const fetchFolders = useCallback(async () => {
     try {
@@ -181,10 +187,33 @@ export default function ManageClients() {
     }
   };
  
+  const handleImportStep = (data: ParsedImportData, source: ImportSource) => {
+    setImportData(data);
+    setImportSource(source);
+    setImportFlow("review");
+  };
+
   const handleImportSuccess = async (count: number) => {
     if (!selectedFolder) return;
     setImportCount(count);
     setImportFlow("success");
+    await fetchClients(selectedFolder.id);
+    setFolders((prev) => prev.map((folder) => (
+      folder.id === selectedFolder.id ? { ...folder, totalClients: folder.totalClients + count } : folder
+    )));
+    setSelectedFolder((folder) => folder ? { ...folder, totalClients: folder.totalClients + count } : folder);
+  };
+
+  const handleRunImport = async (rows: string[][], selectedFields: string[]) => {
+    if (!selectedFolder) return;
+    const clients = buildClientPayloads(rows, selectedFields as any, importData?.headers);
+    try {
+      await clientService.addClientsBatchManual(clients, selectedFolder.id);
+      handleImportSuccess(clients.length);
+    } catch (error) {
+      console.error("Failed to import contacts", error);
+      alert("Failed to import contacts. Please try again.");
+    }
   };
  
   return (
@@ -221,9 +250,53 @@ export default function ManageClients() {
         />
       )}
       {showAddClient && <AddClientModal onClose={() => setShowAddClient(false)} onAdd={handleAddClient} />}
-      {importFlow === "step1" && <ImportStep1 onClose={() => setImportFlow("idle")} onNext={(step) => setImportFlow(step)} />}
-      {importFlow === "file" && <ImportStepFile onClose={() => setImportFlow("idle")} onSuccess={handleImportSuccess} />}
-      {importFlow === "paste" && <ImportStepPaste onClose={() => setImportFlow("idle")} onSuccess={handleImportSuccess} />}
+      {importFlow === "step1" && (
+        <ImportStep1
+          onClose={() => {
+            setImportFlow("idle");
+            setImportSource(null);
+            setImportData(null);
+          }}
+          onNext={(step) => {
+            setImportSource(step);
+            setImportFlow(step);
+          }}
+        />
+      )}
+      {importFlow === "file" && (
+        <ImportStepFile
+          onClose={() => {
+            setImportFlow("idle");
+            setImportSource(null);
+            setImportData(null);
+          }}
+          onSuccess={(data) => handleImportStep(data, "file")}
+        />
+      )}
+      {importFlow === "paste" && (
+        <ImportStepPaste
+          onClose={() => {
+            setImportFlow("idle");
+            setImportSource(null);
+            setImportData(null);
+          }}
+          onSuccess={(data) => handleImportStep(data, "paste")}
+        />
+      )}
+      {importFlow === "review" && importData && (
+        <ImportStepReview
+          onClose={() => {
+            setImportFlow("idle");
+            setImportSource(null);
+            setImportData(null);
+          }}
+          onBack={() => {
+            setImportFlow(importSource ?? "step1");
+          }}
+          data={importData}
+          onImport={handleRunImport}
+        />
+      )}
       {importFlow === "success" && <ImportSuccessModal count={importCount} onClose={() => setImportFlow("idle")} />}
     </>
   );

@@ -1,8 +1,11 @@
 import { useState } from "react";
 import Overlay from "../Overlay";
+import { parseTextToRows } from "../../utils/importParser";
+import type { ParsedImportData } from "../../types/domain";
 
-function ImportStepPaste({ onClose, onSuccess }: { onClose: () => void; onSuccess: (count: number) => void }) {
+function ImportStepPaste({ onClose, onSuccess }: { onClose: () => void; onSuccess: (data: ParsedImportData) => void }) {
   const [text, setText] = useState("");
+
   return (
     <Overlay>
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-2xl">
@@ -10,17 +13,22 @@ function ImportStepPaste({ onClose, onSuccess }: { onClose: () => void; onSucces
           <h2 className="text-xl font-bold text-gray-900">Import Contacts</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
         </div>
-        <p className="text-sm text-gray-500 mb-4">Type Or Paste Your Contacts Here.</p>
+        <p className="text-sm text-gray-500 mb-4">Type or paste your contact rows here.</p>
         <textarea
           className="w-full border border-gray-200 rounded-xl p-4 text-sm text-gray-600 resize-none h-55 focus:outline-none focus:ring-2 focus:ring-blue-500 my-7"
-          placeholder="@email1, @email2, @email3...."
+          placeholder="Email, Full Name, Phone Number, Website or comma/tab-separated rows"
           value={text}
           onChange={e => setText(e.target.value)}
         />
+        <p className="text-xs text-gray-400 mb-4">Examples: <br />john@example.com, John Doe, 555-1234, example.com <br />or tab-separated rows on each line.</p>
         <div className="flex gap-3 justify-center items-center">
           <button onClick={onClose} className="border border-gray-300 text-gray-700 text-sm font-semibold px-5 py-3 rounded-lg hover:bg-gray-50 transition-colors w-30">Cancel</button>
           <button
-            onClick={() => text.trim() && onSuccess(text.split(",").length)}
+            onClick={() => {
+              const parsed = parseTextToRows(text);
+              if (parsed.rows.length === 0) return;
+              onSuccess(parsed);
+            }}
             disabled={!text.trim()}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-3 rounded-lg transition-colors"
           >

@@ -4,14 +4,42 @@ import type { LoginCredentials, RegisterForm, ResetPasswordPayload } from '../ty
 import axios from 'axios';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ai-newsletter-be.onrender.com/api/v1.0';
+const AUTH_STORAGE_KEY = 'ingageiq_auth';
+
+function saveAuthToStorage(token: string | null, user: any | null) {
+  if (!token) {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    return;
+  }
+
+  try {
+    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token, user }));
+  } catch (error) {
+    console.warn('[authService] Failed to persist auth to localStorage', error);
+  }
+}
+
+export function clearAuthStorage() {
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+export function loadPersistedAuth() {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as { token: string; user: any };
+  } catch {
+    return null;
+  }
+}
 
 export const authService = {
   async login(credentials: LoginCredentials) {
     const response = await apiClient.post('/auth/login', credentials);
     const { token, user } = response.data.data;
     
-    // Update the Zustand store directly
     useAuthStore.getState().setAuth(token, user);
+    saveAuthToStorage(token, user);
     return response.data;
   },
 
@@ -33,6 +61,7 @@ export const authService = {
   async logout() {
     await apiClient.get('/auth/logout');
     useAuthStore.getState().clearAuth();
+    clearAuthStorage();
   },
 
   async forgotPassword(email: string) {
@@ -57,7 +86,6 @@ export const authService = {
       }
       return resp.data;
     } catch (e) {
-      useAuthStore.getState().clearAuth();
       throw e;
     }
   },

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { MOCK_DRAFTS } from "../../types/Mockdata";
 import type { EmailDraft } from "../../types/Types";
 import searchIcon from "../../assets/searchIconBAW.svg";
 
@@ -85,7 +84,7 @@ function DraftCard({ draft, onSelect, onView, onDelete }: {
 }
 
 export function DraftsTab({ onSelectDraft }: Props) {
-  const [drafts, setDrafts] = useState(MOCK_DRAFTS);
+  const [drafts, setDrafts] = useState<EmailDraft[]>([]);
   const [search, setSearch] = useState("");
 
   const filtered = drafts.filter(d => d.title.toLowerCase().includes(search.toLowerCase()));
@@ -111,18 +110,25 @@ export function DraftsTab({ onSelectDraft }: Props) {
         </div>
       </div>
 
-      {/* Grid */}
-      <div className="grid grid-cols-3 gap-4">
-        {filtered.map(d => (
-          <DraftCard
-            key={d.id}
-            draft={d}
-            onSelect={() => onSelectDraft(d)}
-            onView={() => {}}
-            onDelete={() => setDrafts(prev => prev.filter(x => x.id !== d.id))}
-          />
-        ))}
-      </div>
+      {/* Empty state */}
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
+          <h3 className="text-lg font-semibold text-gray-800">No drafts yet</h3>
+          <p className="text-sm text-gray-500 mt-2">Drafts will appear here once the backend data is available.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-4">
+          {filtered.map(d => (
+            <DraftCard
+              key={d.id}
+              draft={d}
+              onSelect={() => onSelectDraft(d)}
+              onView={() => {}}
+              onDelete={() => setDrafts(prev => prev.filter(x => x.id !== d.id))}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

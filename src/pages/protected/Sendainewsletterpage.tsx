@@ -17,7 +17,7 @@ type ActiveModal =
   | { type: "none" }  
   | { type: "send_method" }
   | { type: "ai_flow" }
-  | { type: "composer"; prefilled?: { subject?: string; body?: string } }
+  | { type: "composer"; prefilled?: { subject?: string; body?: string; preview?: string; aiResult?: Record<string, unknown> }; templateId?: number }
   | { type: "report"; newsletter: Newsletter }
   | { type: "preview"; newsletter: Newsletter };
 
@@ -91,8 +91,12 @@ export default function SendAINewsletterPage() {
     }
   };
 
-  const handleAIDone = (prefilled: { subject: string; body: string }) => {
-    setModal({ type: "composer", prefilled });
+  const handleAIDone = (prefilled: { subject: string; body: string; preview?: string; aiResult?: Record<string, unknown> }) => {
+    setModal({ type: "composer", prefilled, templateId: 5 });
+  };
+
+  const handleTemplateSelect = (templateId?: number) => {
+    setModal({ type: "composer", templateId: templateId ?? 0 });
   };
 
   const isBrandWorkspace = Boolean(brandId);
@@ -158,8 +162,8 @@ export default function SendAINewsletterPage() {
         )}
         {activeTab === "templates" && (
           <TemplatesTab
-            onSelectTemplate={() => setModal({ type: "composer" })}
-            onCreateBlank={() => setModal({ type: "composer" })}
+            onSelectTemplate={(template) => handleTemplateSelect(template.id)}
+            onCreateBlank={() => handleTemplateSelect(0)}
           />
         )}
         {activeTab === "drafts" && (
@@ -189,6 +193,7 @@ export default function SendAINewsletterPage() {
         <EmailComposerModal
           onClose={closeModal}
           prefilled={modal.type === "composer" ? modal.prefilled : undefined}
+          templateId={modal.type === "composer" ? modal.templateId : undefined}
         />
       )}
 

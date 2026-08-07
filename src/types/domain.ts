@@ -153,3 +153,10 @@ export interface OnboardingMeta {
 
 export type LeadResult = ClientData;
 
+export type ImportedField = "fullName" | "lastName" | "phone" | "email" | "website";
+
+export interface ParsedImportData {
+  headers?: string[];
+  rows: string[][];
+}
+

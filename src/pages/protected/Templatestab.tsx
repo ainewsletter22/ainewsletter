@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { MOCK_TEMPLATES } from "../../types/Mockdata";
 import type { EmailTemplate } from "../../types/Types";
 import searchIcon from "../../assets/searchIconBAW.svg";
 
@@ -155,7 +154,7 @@ function TemplateCard({ template, onSelect, onView, onDelete }: {
 }
 
 export function TemplatesTab({ onSelectTemplate, onCreateBlank }: Props) {
-  const [templates, setTemplates] = useState(MOCK_TEMPLATES);
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [search, setSearch] = useState("");
 
   const filtered = templates.filter(t => t.name.toLowerCase().includes(search.toLowerCase()));
@@ -173,11 +172,15 @@ export function TemplatesTab({ onSelectTemplate, onCreateBlank }: Props) {
           <span className="text-sm text-blue-600 font-medium">Blank Template</span>
         </button>
 
-        {/* Preset template mockups (non-interactive top row) */}
-        {[0, 1, 2, 3, 4].map(i => (
-          <div key={i} className="shrink-0 w-36 h-36 border border-gray-100 rounded-2xl overflow-hidden bg-gray-50">
-            <TemplateMockup color="#bfdbfe" index={i} />
-          </div>
+        {/* Preset template mockups */}
+        {[1, 2, 3, 4, 5].map(templateId => (
+          <button
+            key={templateId}
+            onClick={() => onSelectTemplate({ id: templateId, name: `Template ${templateId}`, thumbnail: "#bfdbfe" })}
+            className="shrink-0 w-36 h-36 border border-gray-100 rounded-2xl overflow-hidden bg-gray-50 hover:border-blue-300 hover:shadow-md"
+          >
+            <TemplateMockup color="#bfdbfe" index={templateId - 1} />
+          </button>
         ))}
       </div>
 
@@ -203,20 +206,27 @@ export function TemplatesTab({ onSelectTemplate, onCreateBlank }: Props) {
         </div>
       </div>
 
-      {/* Template grid */}
-      <div className="grid grid-cols-3 gap-4">
-        {filtered.map(t => (
-          <div key={t.id} className="bg-white border border-gray-100 rounded-2xl p-3 shadow-sm">
-            <TemplateCard
-              template={t}
-              onSelect={() => onSelectTemplate(t)}
-              onView={() => {}}
-              onDelete={() => setTemplates(prev => prev.filter(x => x.id !== t.id))}
-            />
-            <p className="text-xs text-gray-500 mt-2 px-1 truncate">🤌 The Lemon Squeezy Slack is here, and you're invited to join!</p>
-          </div>
-        ))}
-      </div>
+      {/* Empty state */}
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
+          <h3 className="text-lg font-semibold text-gray-800">No templates yet</h3>
+          <p className="text-sm text-gray-500 mt-2">Templates will appear here once the backend data is available.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-4">
+          {filtered.map(t => (
+            <div key={t.id} className="bg-white border border-gray-100 rounded-2xl p-3 shadow-sm">
+              <TemplateCard
+                template={t}
+                onSelect={() => onSelectTemplate(t)}
+                onView={() => {}}
+                onDelete={() => setTemplates(prev => prev.filter(x => x.id !== t.id))}
+              />
+              <p className="text-xs text-gray-500 mt-2 px-1 truncate">🤌 The Lemon Squeezy Slack is here, and you're invited to join!</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

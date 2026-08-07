@@ -16,7 +16,7 @@ interface Props {
 
 function BrandsTable({ brands, onView, onEdit, onDelete, onCreate }: Props) {
   const [search, setSearch] = useState("");
-  const filtered = brands.filter(b => b.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = brands.filter(b => (b.name ?? "").toLowerCase().includes(search.toLowerCase()));
   const remaining = Math.max(0, MAX_BRANDS - brands.length);
 
   return (
@@ -72,62 +72,70 @@ function BrandsTable({ brands, onView, onEdit, onDelete, onCreate }: Props) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((b, i) => (
-              <tr
-                key={b.id}
-                className={`border-b border-gray-50 hover:bg-blue-50/30 transition-colors ${
-                  i % 2 === 0 ? "bg-white" : "bg-gray-50/40"
-                }`}
-              >
-                <td className="px-4 py-3">
-                  <input type="checkbox" />
-                </td>
-                <td className="px-4 py-3">
-                  <button onClick={() => onView(b)} className="flex items-center gap-2 text-sm text-blue-600 hover:underline font-medium text-left">
-                    <span className="w-6 h-6 rounded bg-blue-50 flex items-center justify-center overflow-hidden shrink-0">
-                      {b.logo ? <img src={b.logo} className="w-full h-full object-cover" alt="" /> : "🏳️"}
-                    </span>
-                    {b.name}
-                  </button>
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600">{b.dateCreated}</td>
-                <td className="px-4 py-3">
-                  {b.totalCampaigns > 0 ? (
-                    <span className="text-sm text-blue-600 font-medium">{b.totalCampaigns.toLocaleString()}</span>
-                  ) : (
-                    <span className="text-sm text-amber-500 font-medium">No Campaigns Yet</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-600">{b.sendsVia}</td>
-                <td className="px-4 py-3 text-sm">
-                  {b.sendingLimit.limitType === "Unlimited" ? (
-                    <span className="text-blue-600 font-medium">∞ Unlimited</span>
-                  ) : (
-                    <span className="text-blue-600 font-medium">{(b.sendingLimit.emailsPerMonth ?? 0).toLocaleString()}</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-sm">
-                  {b.sendingLimit.limitType === "Unlimited" ? (
-                    <span className="text-blue-600 font-medium">∞ Unlimited</span>
-                  ) : (
-                    <span className="text-blue-600 font-medium">{b.sendingLimit.currentlyUsed.toLocaleString()}</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => onView(b)} className="p-2 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors" title="View">
-                      <img src={viewIcon} className="w-5 h-5" alt="View" />
+            {filtered.map((b, i) => {
+              const name = b.name ?? "(unnamed)";
+              const totalCampaigns = Number(b.totalCampaigns ?? 0);
+              const sendsVia = b.sendsVia ?? "";
+              const dateCreated = b.dateCreated ?? "";
+              const sendingLimit = b.sendingLimit ?? { limitType: "Unlimited", emailsPerMonth: 0, currentlyUsed: 0 };
+
+              return (
+                <tr
+                  key={b.id}
+                  className={`border-b border-gray-50 hover:bg-blue-50/30 transition-colors ${
+                    i % 2 === 0 ? "bg-white" : "bg-gray-50/40"
+                  }`}
+                >
+                  <td className="px-4 py-3">
+                    <input type="checkbox" />
+                  </td>
+                  <td className="px-4 py-3">
+                    <button onClick={() => onView(b)} className="flex items-center gap-2 text-sm text-blue-600 hover:underline font-medium text-left">
+                      <span className="w-6 h-6 rounded bg-blue-50 flex items-center justify-center overflow-hidden shrink-0">
+                        {b.logo ? <img src={b.logo} className="w-full h-full object-cover" alt="" /> : "🏳️"}
+                      </span>
+                      {name}
                     </button>
-                    <button onClick={() => onEdit(b)} className="p-2 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors" title="Edit">
-                      <img src={editIcon} className="w-5 h-5" alt="Edit" />
-                    </button>
-                    <button onClick={() => onDelete(b.id)} className="p-2 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors" title="Delete">
-                      <img src={deleteIcon} className="w-5 h-5" alt="Delete" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{dateCreated}</td>
+                  <td className="px-4 py-3">
+                    {totalCampaigns > 0 ? (
+                      <span className="text-sm text-blue-600 font-medium">{totalCampaigns.toLocaleString()}</span>
+                    ) : (
+                      <span className="text-sm text-amber-500 font-medium">No Campaigns Yet</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">{sendsVia}</td>
+                  <td className="px-4 py-3 text-sm">
+                    {sendingLimit.limitType === "Unlimited" ? (
+                      <span className="text-blue-600 font-medium">∞ Unlimited</span>
+                    ) : (
+                      <span className="text-blue-600 font-medium">{(sendingLimit.emailsPerMonth ?? 0).toLocaleString()}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm">
+                    {sendingLimit.limitType === "Unlimited" ? (
+                      <span className="text-blue-600 font-medium">∞ Unlimited</span>
+                    ) : (
+                      <span className="text-blue-600 font-medium">{(sendingLimit.currentlyUsed ?? 0).toLocaleString()}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => onView(b)} className="p-2 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors" title="View">
+                        <img src={viewIcon} className="w-5 h-5" alt="View" />
+                      </button>
+                      <button onClick={() => onEdit(b)} className="p-2 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors" title="Edit">
+                        <img src={editIcon} className="w-5 h-5" alt="Edit" />
+                      </button>
+                      <button onClick={() => onDelete(b.id)} className="p-2 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors" title="Delete">
+                        <img src={deleteIcon} className="w-5 h-5" alt="Delete" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={7} className="text-center text-sm text-gray-400 py-10">

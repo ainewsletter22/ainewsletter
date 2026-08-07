@@ -8,13 +8,13 @@ interface Props {
   creating?: boolean;
 }
 
-const EMPTY: BrandFormValues = { name: "", fromName: "", fromEmail: "", replyToEmail: "" };
+const EMPTY: BrandFormValues = { name: "", fromName: "", fromEmail: "", replyToEmail: "", resendApiKey: "" };
 
 export function CreateBrandModal({ onClose, onCreate, creating }: Props) {
   const [values, setValues] = useState<BrandFormValues>(EMPTY);
   const [preview, setPreview] = useState<string | undefined>();
 
-  const set = (key: keyof BrandFormValues) => (e: ChangeEvent<HTMLInputElement>) =>
+  const set = (key: Exclude<keyof BrandFormValues, 'logo'>) => (e: ChangeEvent<HTMLInputElement>) =>
     setValues(v => ({ ...v, [key]: e.target.value }));
 
   const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
@@ -22,7 +22,7 @@ export function CreateBrandModal({ onClose, onCreate, creating }: Props) {
     if (!file) return;
     const url = URL.createObjectURL(file);
     setPreview(url);
-    setValues(v => ({ ...v, logo: url }));
+    setValues(v => ({ ...v, logo: file }));
   };
 
   const canContinue = Boolean(values.name.trim() && values.fromName.trim() && values.fromEmail.trim() && values.replyToEmail.trim());
@@ -51,6 +51,10 @@ export function CreateBrandModal({ onClose, onCreate, creating }: Props) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Reply to email</label>
             <input value={values.replyToEmail} onChange={set("replyToEmail")} className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Resend API key</label>
+            <input value={values.resendApiKey ?? ""} onChange={set("resendApiKey")} className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Optional: API key for resend service" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
