@@ -5,6 +5,7 @@ import type { ParsedImportData } from "../../types/domain";
 
 function ImportStepPaste({ onClose, onSuccess }: { onClose: () => void; onSuccess: (data: ParsedImportData) => void }) {
   const [text, setText] = useState("");
+  const [isProcessing, setIsProcessing] = useState(false);
 
   return (
     <Overlay>
@@ -20,19 +21,23 @@ function ImportStepPaste({ onClose, onSuccess }: { onClose: () => void; onSucces
           value={text}
           onChange={e => setText(e.target.value)}
         />
-        <p className="text-xs text-gray-400 mb-4">Examples: <br />john@example.com, John Doe, 555-1234, example.com <br />or tab-separated rows on each line.</p>
+        <p className="text-xs text-gray-400 mb-4">Examples: <br />john@example.com, John Doe, 555-1234, example.com <br />or Enter to separate rows on each line.</p>
         <div className="flex gap-3 justify-center items-center">
-          <button onClick={onClose} className="border border-gray-300 text-gray-700 text-sm font-semibold px-5 py-3 rounded-lg hover:bg-gray-50 transition-colors w-30">Cancel</button>
+          <button onClick={onClose} disabled={isProcessing} className="border border-gray-300 text-gray-700 text-sm font-semibold px-5 py-3 rounded-lg hover:bg-gray-50 transition-colors w-30 disabled:opacity-50 disabled:cursor-not-allowed">Cancel</button>
           <button
             onClick={() => {
+              setIsProcessing(true);
               const parsed = parseTextToRows(text);
-              if (parsed.rows.length === 0) return;
+              if (parsed.rows.length === 0) {
+                setIsProcessing(false);
+                return;
+              }
               onSuccess(parsed);
             }}
-            disabled={!text.trim()}
+            disabled={!text.trim() || isProcessing}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-3 rounded-lg transition-colors"
           >
-            + Add Contact
+            {isProcessing ? "Processing..." : "+ Add Contact"}
           </button>
         </div>
       </div>

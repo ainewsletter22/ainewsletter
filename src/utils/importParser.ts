@@ -14,8 +14,8 @@ const fieldLabelTokens: Record<ImportedField, string[]> = {
 };
 
 const emailPattern = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-const websitePattern = /^(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._+~#=]{2,256}\.[a-z]{2,6}([\/\w .-]*)*\/?$/i;
-const phonePattern = /(?:\+?\d{1,3}[\s-]?)?(?:\(\d{2,5}\)|\d{2,5})[\s.-]?\d{3,4}[\s.-]?\d{3,4}/;
+const websitePattern = /^(https?:\/\/)?(www\.)?[-a-zA-Z0-9:%._+~#=]{2,256}\.[a-z]{2,6}([\/\w .-]*)*\/?$/i;
+const phonePattern = /(?:\+?\d{1,3}[\s-]?)?(?:\(\d{2,5}\)|\d{2,5})[\s.-]?\d{3,4}[\s.-]?\d{3,4}|\d{3}[-.\s]?\d{3,4}[-.\s]?\d{4}|\d{7,15}/;
 
 function trimCell(value: string): string {
   const trimmed = value.trim();
@@ -144,15 +144,6 @@ export function extractRowValues(
     }
   }
 
-  if (selectedFields.includes("website") && !values.website) {
-    const match = row.find(cell => websitePattern.test(cell));
-    if (match) {
-      values.website = match.trim();
-      const idx = row.indexOf(match);
-      if (idx !== -1) remainingCells[idx] = "";
-    }
-  }
-
   if (selectedFields.includes("phone") && !values.phone) {
     const match = row.find(cell => phonePattern.test(cell));
     if (match) {
@@ -162,7 +153,16 @@ export function extractRowValues(
     }
   }
 
-  const leftover = remainingCells.filter(cell => cell && !emailPattern.test(cell) && !websitePattern.test(cell)).map(cell => cell.trim()).filter(Boolean);
+  if (selectedFields.includes("website") && !values.website) {
+    const match = row.find(cell => websitePattern.test(cell) && !emailPattern.test(cell));
+    if (match) {
+      values.website = match.trim();
+      const idx = row.indexOf(match);
+      if (idx !== -1) remainingCells[idx] = "";
+    }
+  }
+
+  const leftover = remainingCells.filter(cell => cell && !emailPattern.test(cell) && !websitePattern.test(cell) && !phonePattern.test(cell)).map(cell => cell.trim()).filter(Boolean);
 
   if (selectedFields.includes("fullName") && !values.fullName) {
     if (leftover.length > 0) {

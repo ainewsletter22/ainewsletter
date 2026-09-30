@@ -12,7 +12,10 @@ import type {
   SendingLimitSettings,
   SendingLimitType,
   FooterSettings,
+  SendVia,
 } from "../../types/Types";
+import { SendModeSwitch } from "./SendModeSwitch";
+import { ResendSyncManagement } from "./ResendSyncManagement";
 
 type RegionOption = {
   id: number;
@@ -173,9 +176,10 @@ interface AddDomainSectionProps {
   onAddDomain: (name: string, regionId: number) => Promise<BrandDomain | undefined>;
   onDeleteDomain: (domainId: number) => void;
   onVerifyDomain: (domainId: number) => Promise<void>;
+  saving?: boolean;
 }
 
-export function AddDomainSection({ domains, regions, onAddDomain, onDeleteDomain, onVerifyDomain }: AddDomainSectionProps) {
+export function AddDomainSection({ domains, regions, onAddDomain, onDeleteDomain, onVerifyDomain, saving }: AddDomainSectionProps) {
   const [step, setStep] = useState<DomainStep>(domains.length ? "list" : "form");
   const [name, setName] = useState("");
   const [region, setRegion] = useState<string>(regions.length > 0 ? regions[0].id.toString() : "");
@@ -185,12 +189,20 @@ export function AddDomainSection({ domains, regions, onAddDomain, onDeleteDomain
   const [statusFilter, setStatusFilter] = useState("All Statuses");
   const [serverError, setServerError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [viewRecordsDomain, setViewRecordsDomain] = useState<BrandDomain | null>(null);
 
   useEffect(() => {
     if (!region && regions.length > 0) {
       setRegion(regions[0].id.toString());
     }
   }, [regions, region]);
+
+  // Update step when domains prop changes (after brand refresh)
+  useEffect(() => {
+    if (domains.length > 0 && step === "form") {
+      setStep("list");
+    }
+  }, [domains, step]);
 
   // Returns a plain ISO country code (e.g. "US") for a given region label,
   // or null if nothing matched — FlagIcon renders a globe icon for null.
@@ -228,8 +240,15 @@ export function AddDomainSection({ domains, regions, onAddDomain, onDeleteDomain
     try {
       const domain = await onAddDomain(name.trim(), Number(region));
       if (domain) {
-        setPendingDomain(domain);
-        setStep("verify");
+        // Check if DNS records are available
+        const hasDnsRecords = domain.dkim?.content || domain.spf?.length > 0 || domain.dmarc?.content || (domain.cnames?.length ?? 0) > 0;
+        
+        if (hasDnsRecords) {
+          setStep("verify");
+        } else {
+          // If no DNS records yet, go directly to list and show as pending
+          setStep("list");
+        }
       }
     } catch (error) {
       setServerError(getApiErrorMessage(error, "Unable to add domain."));
@@ -407,6 +426,35 @@ export function AddDomainSection({ domains, regions, onAddDomain, onDeleteDomain
   }
 
   if (step === "verify" && pendingDomain) {
+    // Check if DNS records are populated
+    const hasDnsRecords = pendingDomain.dkim?.content || 
+                         pendingDomain.spf?.length > 0 || 
+                         pendingDomain.dmarc?.content || 
+                         (pendingDomain.cnames?.length ?? 0) > 0;
+
+    if (!hasDnsRecords) {
+      return (
+        <div>
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-5 py-4 mb-6">
+            <p className="text-sm font-semibold text-yellow-700 flex items-center gap-2">
+              Domain Created
+            </p>
+            <p className="text-xs text-gray-500 mb-2">Domain is being processed. DNS records will be available shortly.</p>
+            <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-full px-3 py-1 text-sm text-gray-700">
+              {pendingDomain.name}
+            </span>
+          </div>
+
+          <button
+            onClick={() => setStep("list")}
+            className="flex items-center gap-2 border border-gray-500 text-gray-600 text-sm font-semibold px-4 py-2.5 rounded-full hover:bg-gray-50 transition-colors"
+          >
+            Go to Domain List
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div>
         <div className="bg-green-50 border border-green-200 rounded-xl px-5 py-4 mb-6">
@@ -461,9 +509,10 @@ export function AddDomainSection({ domains, regions, onAddDomain, onDeleteDomain
             await onVerifyDomain(pendingDomain.id);
             setStep("list");
           }}
-          className="flex items-center gap-2 border border-green-500 text-green-600 text-sm font-semibold px-4 py-2.5 rounded-full hover:bg-green-50 hover:border-white transition-colors"
+          disabled={saving}
+          className="flex items-center gap-2 border border-green-500 text-green-600 text-sm font-semibold px-4 py-2.5 rounded-full hover:bg-green-50 hover:border-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          ✓ I&apos;ve added the records
+          {saving ? 'Processing...' : '✓ I\'ve added the records'}
         </button>
       </div>
     );
@@ -530,9 +579,16 @@ export function AddDomainSection({ domains, regions, onAddDomain, onDeleteDomain
                 <td className="px-4 py-3 text-sm text-gray-600">{d.region}</td>
                 <td className="px-4 py-3 text-sm text-gray-500">{d.addedAt}</td>
                 <td className="px-4 py-3">
-                  <button onClick={() => onDeleteDomain(d.id)} className="p-2 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors" title="Delete">
-                    <img src={trashIcon} className="w-5 h-5" alt="Delete" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setViewRecordsDomain(d)} className="p-2 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-500 transition-colors" title="View DNS Records">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 00.707.293l.414.414a1 1 0 01.707 0H19a2 2 0 012-2V7a2 2 0 01-2-2h-2M9 7h6m0 0v6m0-6V7m6 6h.586a1 1 0 00.707-.293l.414-.414a1 1 0 01-.707 0H9a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 00.707.293l.414.414a1 1 0 01.707 0H19a2 2 0 012-2V7a2 2 0 01-2-2h-2" />
+                      </svg>
+                    </button>
+                    <button onClick={() => onDeleteDomain(d.id)} className="p-2 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors" title="Delete">
+                      <img src={trashIcon} className="w-5 h-5" alt="Delete" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -554,6 +610,56 @@ export function AddDomainSection({ domains, regions, onAddDomain, onDeleteDomain
           <div className="flex gap-2">
             <button className="hover:text-gray-700">Prev</button>
             <button className="hover:text-gray-700">Next</button>
+          </div>
+        </div>
+      )}
+
+      {/* DNS Records Modal */}
+      {viewRecordsDomain && (
+        <div className="mt-6 bg-white border border-gray-200 rounded-xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">DNS Records for {viewRecordsDomain.name}</h3>
+              <p className="text-sm text-gray-500">Add these records to your domain provider</p>
+            </div>
+            <button 
+              onClick={() => setViewRecordsDomain(null)}
+              className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+            >
+              ×
+            </button>
+          </div>
+
+          <p className="text-xs font-semibold text-gray-500 mb-2">Domain Verification</p>
+
+          <p className="text-base font-bold mt-6 mb-2">
+            DKIM
+          </p>
+          <DnsTable title="DKIM" records={[viewRecordsDomain.dkim]} onCopy={handleCopy} copied={copied} />
+
+          <p className="text-base font-bold mt-6 mb-2">
+            SPF
+          </p>
+          <DnsTable records={viewRecordsDomain.spf} onCopy={handleCopy} copied={copied} />
+
+          <p className="text-base font-bold mt-6 mb-2">
+            <span className="underline mr-1">DMARC</span> <span className="text-gray-400 font-normal text-xs">Optional</span>
+          </p>
+          <DnsTable records={[viewRecordsDomain.dmarc]} onCopy={handleCopy} copied={copied} />
+
+          <p className="text-base font-bold mt-6 mb-2">CNAME</p>
+          <DnsTable records={viewRecordsDomain.cnames} onCopy={handleCopy} copied={copied} />
+
+          <div className="mt-4">
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={viewRecordsDomain.enableReceiving}
+                readOnly
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Enable Receiving
+            </label>
           </div>
         </div>
       )}
@@ -851,10 +957,10 @@ interface FooterSettingsSectionProps {
 
 export function FooterSettingsSection({ footer, onSave, onCancel, saving }: FooterSettingsSectionProps) {
   const getInitialValues = (initial: FooterSettings): FooterSettings => ({
-    unsubscribeText: initial.unsubscribeText ?? "",
-    companyName: initial.companyName ?? "",
-    address: initial.address ?? "",
-    cityStateZip: initial.cityStateZip ?? "",
+    unsubscribeText: initial.unsubscribeText !== undefined && initial.unsubscribeText !== null ? initial.unsubscribeText : "You are receiving this email because you opted in via our site.\n\nWant to change how you receive these emails?\nYou can unsubscribe from this list.",
+    companyName: initial.companyName !== undefined && initial.companyName !== null ? initial.companyName : "Company Name",
+    address: initial.address !== undefined && initial.address !== null ? initial.address : "99 Street Address",
+    cityStateZip: initial.cityStateZip !== undefined && initial.cityStateZip !== null ? initial.cityStateZip : "City, STATE 000-000",
     removeBadge: initial.removeBadge ?? false,
   });
 
@@ -874,8 +980,9 @@ export function FooterSettingsSection({ footer, onSave, onCancel, saving }: Foot
               <textarea
                 value={values.unsubscribeText ?? ""}
                 onChange={e => setValues(v => ({ ...v, unsubscribeText: e.target.value }))}
+                placeholder="You are receiving this email because you opted in via our site.&#10;&#10;Want to change how you receive these emails?&#10;You can unsubscribe from this list."
                 rows={5}
-                className="w-full bg-transparent text-sm text-gray-500 leading-6 focus:outline-none resize-none"
+                className="w-full bg-transparent text-sm text-gray-500 leading-6 focus:outline-none resize-none placeholder:text-gray-400"
               />
             </div>
           </div>
@@ -888,19 +995,19 @@ export function FooterSettingsSection({ footer, onSave, onCancel, saving }: Foot
                 value={values.companyName ?? ""}
                 onChange={e => setValues(v => ({ ...v, companyName: e.target.value }))}
                 placeholder="Company Name"
-                className="w-full bg-transparent text-sm text-gray-800 leading-6 focus:outline-none block"
+                className="w-full bg-transparent text-sm text-gray-800 leading-6 focus:outline-none block placeholder:text-gray-400"
               />
               <input
                 value={values.address ?? ""}
                 onChange={e => setValues(v => ({ ...v, address: e.target.value }))}
                 placeholder="99 Street Address"
-                className="w-full bg-transparent text-sm text-gray-800 leading-6 focus:outline-none block"
+                className="w-full bg-transparent text-sm text-gray-800 leading-6 focus:outline-none block placeholder:text-gray-400"
               />
               <input
                 value={values.cityStateZip ?? ""}
                 onChange={e => setValues(v => ({ ...v, cityStateZip: e.target.value }))}
                 placeholder="City, STATE 000-000"
-                className="w-full bg-transparent text-sm text-gray-800 leading-6 focus:outline-none block"
+                className="w-full bg-transparent text-sm text-gray-800 leading-6 focus:outline-none block placeholder:text-gray-400"
               />
             </div>
           </div>
@@ -908,25 +1015,11 @@ export function FooterSettingsSection({ footer, onSave, onCancel, saving }: Foot
           {/* Preview */}
           <div className="rounded-2xl bg-blue-50/70 p-4">
             <div className="flex items-center gap-2.5 mb-1">
-              <div className="w-8 h-8 rounded-lg bg-blue-200 text-blue-700 flex items-center justify-center font-semibold text-sm shrink-0">Y</div>
-              <div>
-                <p className="text-sm leading-tight">
-                  <span className="text-blue-600 font-semibold">Your Name</span>{" "}
-                  <span className="text-gray-400 text-xs mx-2">&lt;youremail@</span>
-                  <span className="inline-block h-3 w-16 bg-blue-100 rounded align-middle" />
-                </p>
-                <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                  to me
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </p>
-              </div>
+          
             </div>
 
             <div className="border-t border-blue-100 my-3" />
 
-            <div className="h-2 bg-blue-100 rounded-full w-1/2 mx-auto mb-4" />
 
             <div className="text-center text-[12px] text-gray-700 leading-6 whitespace-pre-line">
               {values.unsubscribeText}
@@ -983,5 +1076,39 @@ export function FooterSettingsSection({ footer, onSave, onCancel, saving }: Foot
           </Btn>
         </div>
     </div>
+  );
+}
+
+// ─── Send Mode Section ───────────────────────────────────────────────────────────
+
+interface SendModeSectionProps {
+  brandId: number;
+  currentMode: SendVia | undefined;
+  onModeChange: (mode: SendVia) => void;
+}
+
+export function SendModeSection({ brandId, currentMode, onModeChange }: SendModeSectionProps) {
+  return (
+    <SendModeSwitch
+      brandId={brandId}
+      currentMode={currentMode}
+      onModeChange={onModeChange}
+    />
+  );
+}
+
+// ─── Resend Sync Management Section ─────────────────────────────────────────────
+
+interface ResendSyncSectionProps {
+  brandId: number;
+  disabled?: boolean;
+}
+
+export function ResendSyncSection({ brandId, disabled = false }: ResendSyncSectionProps) {
+  return (
+    <ResendSyncManagement
+      brandId={brandId}
+      disabled={disabled}
+    />
   );
 }

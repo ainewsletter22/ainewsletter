@@ -3,7 +3,7 @@ import type { EmailTemplate } from "../../types/Types";
 import searchIcon from "../../assets/searchIconBAW.svg";
 
 interface Props {
-  onSelectTemplate: (t: EmailTemplate) => void;
+  onSelectTemplate: (template: number | EmailTemplate) => void;
   onCreateBlank: () => void;
 }
 
@@ -176,7 +176,7 @@ export function TemplatesTab({ onSelectTemplate, onCreateBlank }: Props) {
         {[1, 2, 3, 4, 5].map(templateId => (
           <button
             key={templateId}
-            onClick={() => onSelectTemplate({ id: templateId, name: `Template ${templateId}`, thumbnail: "#bfdbfe" })}
+            onClick={() => onSelectTemplate(templateId)}
             className="shrink-0 w-36 h-36 border border-gray-100 rounded-2xl overflow-hidden bg-gray-50 hover:border-blue-300 hover:shadow-md"
           >
             <TemplateMockup color="#bfdbfe" index={templateId - 1} />
@@ -192,7 +192,6 @@ export function TemplatesTab({ onSelectTemplate, onCreateBlank }: Props) {
           </div>
           <div>
             <p className="text-sm font-semibold text-gray-800">Total Email Templates</p>
-            <p className="text-xs text-gray-500">27 Remaining</p>
           </div>
         </div>
         <div className="relative">

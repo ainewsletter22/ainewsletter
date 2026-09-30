@@ -1,7 +1,7 @@
 import { useState } from "react";
 import Overlay from "../Overlay";
 
-function AddFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name: string) => void }) {
+function AddFolderModal({ onClose, onAdd, error }: { onClose: () => void; onAdd: (name: string) => void; error?: string }) {
   const [name, setName] = useState("");
   return (
     <Overlay>
@@ -14,9 +14,10 @@ function AddFolderModal({ onClose, onAdd }: { onClose: () => void; onAdd: (name:
           onChange={e => setName(e.target.value)}
           placeholder="Enter group name"
         />
+        {error && <div className="mb-4 text-sm text-red-600">{error}</div>}
         <div className="flex justify-center gap-3">
           <button
-            onClick={() => { if (name.trim()) { onAdd(name.trim()); onClose(); } }}
+            onClick={() => { if (name.trim()) { onAdd(name.trim()); } }}
             className="flex items-center gap-2 bg-[#337DD3] hover:bg-[#075ec3] text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors"
           >
             <span className="text-lg leading-none">+</span> Add New Group

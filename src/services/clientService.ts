@@ -163,17 +163,17 @@ export const clientService = {
   },
 
   async createCategory(name: string, description: string) {
-    const formData = new FormData();
-    formData.append("name", name);
-    formData.append("description", description || " ");
-    return apiClient.post("/client-categories/create", formData);
+    return apiClient.post("/client-categories/create", {
+      name,
+      description: description || " ",
+    });
   },
 
   async updateCategory(id: number | string, name: string, description: string) {
-    const formData = new FormData();
-    formData.append("name", name);
-    formData.append("description", description || " ");
-    return apiClient.put(`/client-categories/update/${id}`, formData);
+    return apiClient.put(`/client-categories/update/${id}`, {
+      name,
+      description: description || " ",
+    });
   },
 
   async deleteCategory(id: number | string) {
@@ -230,9 +230,38 @@ export const clientService = {
   },
 
   async addClientsBatchManual(clients: ManualClientPayload[], categoryId: number | string) {
-    return Promise.all(
-      clients.map((client) => this.addClientManual({ ...client, client_category_id: categoryId }))
-    );
+    const BATCH_SIZE = 10;
+    const results = [];
+
+    for (let i = 0; i < clients.length; i += BATCH_SIZE) {
+      const batch = clients.slice(i, i + BATCH_SIZE);
+
+      // First create all clients in this batch without category
+      const createdClients = await Promise.all(
+        batch.map((client) => this.addClientManual({ business_name: client.business_name }))
+      );
+
+      // Then update each client with their full data including category
+      const batchResults = await Promise.all(
+        createdClients.map((response, index) => {
+          const createdId = response?.data?.id;
+          if (!createdId) throw new Error("Failed to get created client id");
+
+          const client = batch[index];
+          const updatePayload: ClientUpdatePayload = {};
+          if (client.email) updatePayload.email = client.email;
+          if (client.phone) updatePayload.phone = client.phone;
+          if (client.website) updatePayload.website = client.website;
+          updatePayload.client_cat_id = categoryId;
+
+          return this.updateClient(createdId, updatePayload);
+        })
+      );
+
+      results.push(...batchResults);
+    }
+
+    return results;
   },
 
   async getAllJobs(): Promise<{ data?: SearchJob[] }> {

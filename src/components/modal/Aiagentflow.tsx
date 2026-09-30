@@ -6,6 +6,7 @@ import { lookupService } from "../../services/lookupService";
 import { brandService } from "../../services/brandService";
 import { aiWriterService, type AiWriterGeneratePayload } from "../../services/aiWriterService";
 import { headlineService } from "../../services/headlineService";
+import { draftService } from "../../services/draftService";
 import { useParams } from "react-router-dom";
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -14,7 +15,9 @@ type AIStep = "config" | "content" | "schedule" | "loading";
 
 interface Props {
   onClose: () => void;
-  onDone: (prefilled: { subject: string; body: string; preview?: string; aiResult?: Record<string, unknown> }) => void;
+  onDone: (prefilled: { subject: string; body: string; preview?: string; aiResult?: Record<string, unknown>; draftId?: number }) => void;
+  brandId?: number;
+  domainId?: number;
 }
 
 // ─── Step 1: Agent Config ─────────────────────────────────────────────────────
@@ -23,7 +26,7 @@ function AgentConfigStep({
   form, onChange, onBack, onContinue, options,
 }: {
   form: AIAgentForm;
-  onChange: (k: keyof AIAgentForm, v: string) => void;
+  onChange: (k: keyof AIAgentForm, v: string | number) => void;
   onBack: () => void;
   onContinue: () => void;
   options: {
@@ -42,7 +45,15 @@ function AgentConfigStep({
       <div className="space-y-4">
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1.5 block">Select your AI Agent</label>
-          <Select value={form.agent} onChange={v => onChange("agent", v)} options={options.agentOptions.map(option => option.name)} />
+          <Select 
+            value={form.agent} 
+            onChange={v => {
+              const selectedOption = options.agentOptions.find(opt => opt.name === v);
+              onChange("agent", v);
+              onChange("agentId", selectedOption?.id || 0);
+            }} 
+            options={options.agentOptions.map(option => option.name)} 
+          />
         </div>
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1.5 block">Sender Name</label>
@@ -55,15 +66,39 @@ function AgentConfigStep({
         </div>
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1.5 block">Business Type</label>
-          <Select value={form.businessType} onChange={v => onChange("businessType", v)} options={options.businessTypeOptions.map(option => option.name)} />
+          <Select 
+            value={form.businessType} 
+            onChange={v => {
+              const selectedOption = options.businessTypeOptions.find(opt => opt.name === v);
+              onChange("businessType", v);
+              onChange("businessTypeId", selectedOption?.id || 0);
+            }} 
+            options={options.businessTypeOptions.map(option => option.name)} 
+          />
         </div>
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1.5 block">Goals</label>
-          <Select value={form.goals} onChange={v => onChange("goals", v)} options={options.goalOptions.map(option => option.name)} />
+          <Select 
+            value={form.goals} 
+            onChange={v => {
+              const selectedOption = options.goalOptions.find(opt => opt.name === v);
+              onChange("goals", v);
+              onChange("goalId", selectedOption?.id || 0);
+            }} 
+            options={options.goalOptions.map(option => option.name)} 
+          />
         </div>
         <div>
           <label className="text-sm font-medium text-gray-700 mb-1.5 block">Tone</label>
-          <Select value={form.tone} onChange={v => onChange("tone", v)} options={options.toneOptions.map(option => option.name)} />
+          <Select 
+            value={form.tone} 
+            onChange={v => {
+              const selectedOption = options.toneOptions.find(opt => opt.name === v);
+              onChange("tone", v);
+              onChange("toneId", selectedOption?.id || 0);
+            }} 
+            options={options.toneOptions.map(option => option.name)} 
+          />
         </div>
       </div>
 
@@ -90,46 +125,33 @@ function ContentStep({
   const [editingHeadlineId, setEditingHeadlineId] = useState<number | null>(null);
   const [editingHeadlineName, setEditingHeadlineName] = useState("");
 
-  const addHeadline = async () => {
+  const addHeadline = async (draftId?: number) => {
     const trimmed = form.currentHeadline.trim();
-    if (!trimmed || form.headlines.length >= LIMIT || !brandId) return;
-    try {
-      const created = await headlineService.createHeadline(brandId, trimmed);
-      console.log('[Aiagentflow] created headline', created);
-      onChange("headlines", [...form.headlines, { id: created.id, name: created.name, brandId: brandId, status: created.status }]);
-      onChange("currentHeadline", "");
-    } catch (error) {
-      console.error('[Aiagentflow] create headline failed', error);
-    }
+    if (!trimmed || form.headlines.length >= LIMIT) return;
+    
+    // In AI flow, we don't create headlines until the draft is generated
+    // Just add to the form state temporarily
+    onChange("headlines", [...form.headlines, { id: undefined, name: trimmed, brandId: brandId, draft_id: draftId, status: 1 }] as any);
+    onChange("currentHeadline", "");
   };
 
-  const removeHeadline = async (headline: { id?: number; name: string; brandId?: number; status?: number }) => {
-    if (!headline.id || !brandId) return;
-    try {
-      await headlineService.deleteHeadline(headline.id);
-      console.log('[Aiagentflow] deleted headline', headline.id);
-      onChange("headlines", form.headlines.filter(item => item.id !== headline.id));
-    } catch (error) {
-      console.error('[Aiagentflow] delete headline failed', error);
-    }
+  const removeHeadline = async (headline: { id?: number; name: string; brandId?: number; draft_id?: number; status?: number }) => {
+    // In AI flow, just remove from form state
+    // Headlines are only created when draft is generated
+    onChange("headlines", form.headlines.filter(item => item.name !== headline.name));
   };
 
-  const startEditingHeadline = (headline: { id?: number; name: string; brandId?: number; status?: number }) => {
+  const startEditingHeadline = (headline: { id?: number; name: string; brandId?: number; draft_id?: number; status?: number }) => {
     setEditingHeadlineId(headline.id ?? null);
     setEditingHeadlineName(headline.name);
   };
 
   const saveEditedHeadline = async () => {
-    if (!editingHeadlineId || !brandId || !editingHeadlineName.trim()) return;
-    try {
-      const updated = await headlineService.updateHeadline(editingHeadlineId, editingHeadlineName.trim());
-      console.log('[Aiagentflow] updated headline', updated);
-      onChange("headlines", form.headlines.map(item => (item.id === editingHeadlineId ? { ...item, name: updated.name } : item)));
-      setEditingHeadlineId(null);
-      setEditingHeadlineName("");
-    } catch (error) {
-      console.error('[Aiagentflow] update headline failed', error);
-    }
+    if (!editingHeadlineName.trim()) return;
+    // In AI flow, just update form state
+    onChange("headlines", form.headlines.map(item => (item.id === editingHeadlineId ? { ...item, name: editingHeadlineName.trim() } : item)));
+    setEditingHeadlineId(null);
+    setEditingHeadlineName("");
   };
 
   return (
@@ -144,7 +166,7 @@ function ContentStep({
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-semibold text-gray-800">+Add Headline</label>
             <button
-              onClick={addHeadline}
+              onClick={() => addHeadline()}
               className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
               +Add New
@@ -229,6 +251,64 @@ function ContentStep({
 
 // ─── Step 3: Schedule ─────────────────────────────────────────────────────────
 
+// Helper function to validate schedule feasibility
+function validateSchedule(form: AIScheduleForm): { isValid: boolean; error: string | null } {
+  if (!form.startDate || !form.startTime || !form.stopDate || !form.stopTime) {
+    return { isValid: false, error: "Please fill in all date and time fields" };
+  }
+
+  // Parse stop post to get number of campaigns
+  const stopPostLower = form.stopPost.toLowerCase();
+  let campaignCount = 1;
+  if (stopPostLower.includes("never")) {
+    campaignCount = 999; // Effectively unlimited
+  } else {
+    // Extract number from string (e.g., "After 14 campaigns" -> 14)
+    const numberMatch = stopPostLower.match(/\d+/);
+    if (numberMatch) {
+      campaignCount = Number(numberMatch[0]);
+    }
+  }
+
+  // If campaign frequency is enabled, calculate required time
+  if (form.campaignFrequency) {
+    const intervalAmount = form.postEveryAmount || 1;
+    const intervalUnit = form.postEveryUnit?.toLowerCase() || "hour";
+
+    // Convert interval to hours
+    let intervalHours = intervalAmount;
+    if (intervalUnit.includes("day")) intervalHours = intervalAmount * 24;
+    else if (intervalUnit.includes("month")) intervalHours = intervalAmount * 24 * 30;
+    else if (intervalUnit.includes("year")) intervalHours = intervalAmount * 24 * 365;
+
+    // Calculate required time (campaigns - 1) * interval
+    const requiredHours = (campaignCount - 1) * intervalHours;
+
+    // Calculate available time between start and stop
+    const start = new Date(`${form.startDate}T${form.startTime}`);
+    const stop = new Date(`${form.stopDate}T${form.stopTime}`);
+    const availableHours = (stop.getTime() - start.getTime()) / (1000 * 60 * 60);
+
+    if (availableHours < requiredHours) {
+      const requiredDays = (requiredHours / 24).toFixed(1);
+      const availableDays = (availableHours / 24).toFixed(1);
+      return {
+        isValid: false,
+        error: `Impossible schedule: sending ${campaignCount} emails at ${intervalAmount} ${intervalUnit}(s) interval requires at least ${requiredDays} day(s) between start and stop date, but only ${availableDays} day(s) were provided. Either widen the date range, reduce the campaign count, or shorten the interval.`
+      };
+    }
+  }
+
+  // Validate that stop date is after start date
+  const start = new Date(`${form.startDate}T${form.startTime}`);
+  const stop = new Date(`${form.stopDate}T${form.stopTime}`);
+  if (stop <= start) {
+    return { isValid: false, error: "Stop date must be after start date" };
+  }
+
+  return { isValid: true, error: null };
+}
+
 function ScheduleStep({
   form, onChange, onBack, onGenerate, errorMessage, postEveries, stopPostAfters, durations,
 }: {
@@ -241,6 +321,7 @@ function ScheduleStep({
   stopPostAfters?: { id: number; name: string }[];
   durations?: { id: number; name: string }[];
 }) {
+  const scheduleValidation = validateSchedule(form);
   return (
     <ModalCard className="max-w-xl p-8">
       <button onClick={onBack} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-xl w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100">✕</button>
@@ -248,9 +329,9 @@ function ScheduleStep({
       <p className="text-sm text-gray-500 mt-1 mb-6">Smart Agents that can create an advanced newsletter campaign.</p>
 
       <div className="space-y-5">
-        {errorMessage && (
+        {(errorMessage || !scheduleValidation.isValid) && (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-            {errorMessage}
+            {errorMessage || scheduleValidation.error}
           </div>
         )}
         <Toggle
@@ -265,7 +346,7 @@ function ScheduleStep({
             <span className="text-sm font-medium text-gray-700 w-24">Post Every</span>
             <div className="flex gap-2 flex-1">
               <Select
-                value={String(form.postEveryAmount || 1)}
+                value={String(form.postEveryAmount || 2)}
                 onChange={v => {
                   const amount = Number(v);
                   const match = (postEveries || []).find(i => Number((i as any).number ?? i.name) === amount);
@@ -273,8 +354,8 @@ function ScheduleStep({
                   onChange("postEveryId", match?.id as any);
                 }}
                 options={(postEveries && postEveries.length > 0)
-                  ? postEveries.map(o => String((o as any).number ?? o.name ?? ""))
-                  : ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]}
+                  ? postEveries.map(o => String((o as any).number ?? o.name ?? "")).filter(v => v !== "1")
+                  : [ "2", "3", "4", "5", "6", "7", "8", "9", "10"]}
                 className="flex-1"
               />
               <Select
@@ -334,7 +415,13 @@ function ScheduleStep({
 
       <div className="flex gap-3 mt-8">
         <Btn variant="outline" onClick={onBack}><span>✕</span> Back</Btn>
-        <Btn onClick={onGenerate}>Generate <span>→</span></Btn>
+        <Btn
+          onClick={onGenerate}
+          disabled={!form.startDate || !form.startTime || !form.stopDate || !form.stopTime || !scheduleValidation.isValid}
+          className={!form.startDate || !form.startTime || !form.stopDate || !form.stopTime || !scheduleValidation.isValid ? "opacity-50 cursor-not-allowed" : ""}
+        >
+          Generate <span>→</span>
+        </Btn>
       </div>
     </ModalCard>
   );
@@ -372,8 +459,10 @@ function LoadingStep() {
 
 // ─── Root AI Flow ─────────────────────────────────────────────────────────────
 
-export function AIAgentFlow({ onClose, onDone }: Props) {
-  const { brandId } = useParams();
+export function AIAgentFlow({ onClose, onDone, brandId: propBrandId, domainId: propDomainId }: Props) {
+  const { brandId: paramBrandId } = useParams();
+  const brandId = propBrandId ? Number(propBrandId) : (paramBrandId ? Number(paramBrandId) : undefined);
+  const domainId = propDomainId ? Number(propDomainId) : undefined;
   const [step, setStep] = useState<AIStep>("config");
 
   useEffect(() => {
@@ -417,10 +506,14 @@ export function AIAgentFlow({ onClose, onDone }: Props) {
   }, [brandId]);
   const [agentForm, setAgentForm] = useState<AIAgentForm>({
     agent: "",
+    agentId: 0,
     senderName: "",
     businessType: "",
+    businessTypeId: 0,
     goals: "",
+    goalId: 0,
     tone: "",
+    toneId: 0,
   });
   const [lookupOptions, setLookupOptions] = useState({
     agentOptions: [] as { id: number; name: string }[],
@@ -439,7 +532,7 @@ export function AIAgentFlow({ onClose, onDone }: Props) {
   });
   const [scheduleForm, setScheduleForm] = useState<AIScheduleForm>({
     campaignFrequency: false,
-    postEveryAmount: 1,
+    postEveryAmount: 2,
     postEveryUnit: "",
     postEveryId: undefined,
     durationId: undefined,
@@ -494,9 +587,13 @@ export function AIAgentFlow({ onClose, onDone }: Props) {
         setAgentForm((current) => ({
           ...current,
           agent: current.agent || nextOptions.agentOptions[0]?.name || "",
+          agentId: current.agentId || nextOptions.agentOptions[0]?.id || 0,
           businessType: current.businessType || nextOptions.businessTypeOptions[0]?.name || "",
+          businessTypeId: current.businessTypeId || nextOptions.businessTypeOptions[0]?.id || 0,
           goals: current.goals || nextOptions.goalOptions[0]?.name || "",
+          goalId: current.goalId || nextOptions.goalOptions[0]?.id || 0,
           tone: current.tone || nextOptions.toneOptions[0]?.name || "",
+          toneId: current.toneId || nextOptions.toneOptions[0]?.id || 0,
         }));
 
         const firstPostEveryValue = nextOptions.postEveries[0]
@@ -506,7 +603,7 @@ export function AIAgentFlow({ onClose, onDone }: Props) {
 
         setScheduleForm((current) => ({
           ...current,
-          postEveryAmount: current.postEveryAmount || firstPostEveryValue || 1,
+          postEveryAmount: current.postEveryAmount || firstPostEveryValue || 2,
           postEveryId: current.postEveryId ?? nextOptions.postEveries[0]?.id,
           postEveryUnit: current.postEveryUnit || firstDuration?.name || "",
           durationId: current.durationId ?? firstDuration?.id,
@@ -526,29 +623,21 @@ export function AIAgentFlow({ onClose, onDone }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!brandId) return;
-    let isMounted = true;
-
-    const loadHeadlines = async () => {
-      try {
-        const headlines = await headlineService.getHeadlinesByBrand(Number(brandId));
-        if (!isMounted) return;
-        console.log('[Aiagentflow] loaded headlines from backend', headlines);
-        setContentForm((current) => ({ ...current, headlines: headlines.map(item => ({ id: item.id, name: item.name, brandId: item.brand_id, status: item.status })) }));
-      } catch (error) {
-        console.error('[Aiagentflow] load headlines failed', error);
-      }
-    };
-
-    void loadHeadlines();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [brandId]);
+    // In AI flow, we don't load headlines from backend since brand-based endpoint doesn't exist
+    // Headlines are only created when draft is generated
+    return () => {};
+  }, []);
 
   const handleGenerate = async () => {
+    // Validate schedule before proceeding
+    const scheduleValidation = validateSchedule(scheduleForm);
+    if (!scheduleValidation.isValid) {
+      setErrorMessage(scheduleValidation.error);
+      return;
+    }
+
     setStep("loading");
+    setErrorMessage(null);
     try {
       const brandIdNumber = brandId ? Number(brandId) : undefined;
       const agentLookup = lookupOptions.agentOptions.find(option => option.name === agentForm.agent);
@@ -556,6 +645,59 @@ export function AIAgentFlow({ onClose, onDone }: Props) {
       const businessTypeLookup = lookupOptions.businessTypeOptions.find(option => option.name === agentForm.businessType);
       const goalLookup = lookupOptions.goalOptions.find(option => option.name === agentForm.goals);
 
+      // combine date + time into ISO-like string when time is provided
+      const combineDateTime = (date?: string, time?: string) => {
+        if (!date) return undefined;
+        if (!time) return date; // keep date-only if no time provided
+        // date is YYYY-MM-DD, time is HH:MM => produce YYYY-MM-DDTHH:MM:00
+        return `${date}T${time}:00`;
+      };
+
+      const start_date_combined = combineDateTime(scheduleForm.startDate, scheduleForm.startTime);
+      const stop_date_combined = combineDateTime(scheduleForm.stopDate, scheduleForm.stopTime);
+
+      // use selected lookup ids stored in scheduleForm
+      const postEveryLookup = lookupOptions.postEveries.find(option => option.id === scheduleForm.postEveryId || Number((option as any).number ?? option.name) === scheduleForm.postEveryAmount);
+      const durationLookup = lookupOptions.durations.find(option => option.id === scheduleForm.durationId || option.name.toLowerCase() === scheduleForm.postEveryUnit.toLowerCase());
+      const post_every_id = postEveryLookup?.id;
+      const duration_id = durationLookup?.id;
+      const stop_post_id = scheduleForm.stopPostId;
+
+      // STEP 1: Create a draft first to get draft_id
+      if (!brandIdNumber) {
+        throw new Error('Brand ID is required');
+      }
+
+      const initialDraftPayload = {
+        brand_id: brandIdNumber,
+        domain_id: domainId,
+        from_name: agentForm.senderName,
+        ai_agent_id: agentLookup?.id,
+        ai_goal: goalLookup?.name || agentForm.goals,
+        business_type: businessTypeLookup?.name || agentForm.businessType,
+        tone_id: toneLookup?.id,
+        post_every_id: post_every_id,
+        duration_id: duration_id,
+        stop_post_id: stop_post_id,
+        start_date: start_date_combined || undefined,
+        stop_date: stop_date_combined || undefined,
+        html: "<div>AI-generated content will appear here</div>", // Placeholder HTML
+        head: "AI Draft",
+        preview: "AI-generated draft",
+      };
+
+      const createdDraft = await draftService.createDraft(initialDraftPayload);
+
+      // STEP 2: Create headlines using draft-based endpoint
+      for (const headline of contentForm.headlines) {
+        try {
+          await headlineService.createDraftHeadline(createdDraft.id, headline.name);
+        } catch (error) {
+          console.error('[AIAgentFlow] Failed to create headline for draft:', error);
+        }
+      }
+
+      // STEP 3: Call AI writer with draft_id
       const headlineName = contentForm.headlines[0]?.name || contentForm.currentHeadline || "Newsletter draft";
       const subject = headlineName;
       const preview = contentForm.description || "Your campaign draft is ready.";
@@ -566,13 +708,13 @@ export function AIAgentFlow({ onClose, onDone }: Props) {
         prompt: `${subject}\n\n${preview}\n\n${contentForm.description}${productText}`,
         brand_id: brandIdNumber,
         ai_agent_id: agentLookup?.id,
+        draft_id: createdDraft.id, // Include draft_id
         template_id: 5,
         ai_tone_id: toneLookup?.id,
         campaign_goal_id: goalLookup?.id,
         business_type_id: businessTypeLookup?.id,
       };
 
-      console.log('[AIAgentFlow] generate payload', aiPayload);
       const response = await aiWriterService.generate(aiPayload);
 
       const resolveGeneratedResultId = (payload: Record<string, unknown> | undefined) => {
@@ -603,65 +745,41 @@ export function AIAgentFlow({ onClose, onDone }: Props) {
       }
 
       const resultPayload = (generatedResult ?? response ?? {}) as Record<string, unknown>;
-      console.log('[AIAgentFlow] AI result payload', resultPayload);
       const nextSubject = typeof resultPayload.headline === 'string' ? resultPayload.headline : (typeof response?.subject === 'string' ? response.subject : subject);
       const nextBody = typeof resultPayload.html_body === 'string' ? resultPayload.html_body : (typeof response?.body === 'string' ? response.body : body);
       const nextPreview = typeof resultPayload.preview === 'string' ? resultPayload.preview : (typeof response?.preview === 'string' ? response.preview : preview);
 
-      if (brandIdNumber) {
-        try {
-          // use selected lookup ids stored in scheduleForm
-          const postEveryLookup = lookupOptions.postEveries.find(option => option.id === scheduleForm.postEveryId || Number((option as any).number ?? option.name) === scheduleForm.postEveryAmount);
-          const durationLookup = lookupOptions.durations.find(option => option.id === scheduleForm.durationId || option.name.toLowerCase() === scheduleForm.postEveryUnit.toLowerCase());
-          const post_every_id = postEveryLookup?.id;
-          const duration_id = durationLookup?.id;
-          const stop_post_id = scheduleForm.stopPostId;
+      // STEP 3: Update the draft with AI-generated content
+      const updateDraftPayload = {
+        brand_id: brandIdNumber,
+        domain_id: domainId,
+        html: nextBody,
+        head: nextSubject,
+        preview: nextPreview,
+        from_name: agentForm.senderName,
+        ai_agent_id: agentLookup?.id,
+        ai_goal: goalLookup?.name || agentForm.goals,
+        business_type: businessTypeLookup?.name || agentForm.businessType,
+        tone_id: toneLookup?.id,
+        post_every_id: post_every_id,
+        duration_id: duration_id,
+        stop_post_id: stop_post_id,
+        start_date: start_date_combined || undefined,
+        stop_date: stop_date_combined || undefined,
+      };
 
-          // convert HH:MM -> HH:MM:SS
-          const toScheduleTime = (t?: string) => (t ? `${t}:00` : undefined);
-          const schedule_time = toScheduleTime(scheduleForm.startTime);
-
-          // combine date + time into ISO-like string when time is provided
-          const combineDateTime = (date?: string, time?: string) => {
-            if (!date) return undefined;
-            if (!time) return date; // keep date-only if no time provided
-            // date is YYYY-MM-DD, time is HH:MM => produce YYYY-MM-DDTHH:MM:00
-            return `${date}T${time}:00`;
-          };
-
-          const start_date_combined = combineDateTime(scheduleForm.startDate, scheduleForm.startTime);
-          const stop_date_combined = combineDateTime(scheduleForm.stopDate, scheduleForm.stopTime);
-
-          // build payload — include combined start/stop datetimes when available, plus schedule_date/time
-          const settingsPayload = {
-            ai_agent_id: agentLookup?.id,
-            ai_goal: goalLookup?.name,
-            business_type: businessTypeLookup?.name,
-            tone_id: toneLookup?.id,
-            from_name: agentForm.senderName || undefined,
-            start_date: start_date_combined || undefined,
-            stop_date: stop_date_combined || undefined,
-            schedule_date: scheduleForm.startDate || undefined,
-            schedule_time: schedule_time, // HH:MM:SS preserves time
-            post_every_id: post_every_id,
-            duration_id: duration_id,
-            stop_post_id: stop_post_id,
-            regen_email_body: scheduleForm.regenerateBody,
-            regen_headline: scheduleForm.regenerateSubject,
-          };
-          console.log('[AIAgentFlow] brand settings payload', settingsPayload);
-          await brandService.updateBrandSettings(brandIdNumber, settingsPayload);
-        } catch (brandError) {
-          console.error('[AIAgentFlow] brand settings update failed', brandError);
-          setErrorMessage('AI content generated, but saving brand settings failed.');
-        }
-      }
+      await draftService.updateDraft(createdDraft.id, updateDraftPayload);
 
       onDone({
         subject: nextSubject,
         body: nextBody,
         preview: nextPreview,
-        aiResult: resultPayload,
+        aiResult: {
+          ...resultPayload,
+          start_date: start_date_combined,
+          start_time: scheduleForm.startTime,
+        },
+        draftId: createdDraft.id,
       });
     } catch (error) {
       console.error('[AIAgentFlow] generate failed', error);

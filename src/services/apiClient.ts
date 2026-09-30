@@ -51,10 +51,13 @@ apiClient.interceptors.response.use(
   }
 );
 
-export async function uploadAsset(file: File, _folder = 'uploads', brandId?: number, onProgress?: (percent: number) => void) {
+export async function uploadAsset(file: File, _folder = 'uploads', brandId?: number, draftId?: number, onProgress?: (percent: number) => void) {
   const formData = new FormData();
   formData.append('files', file);
   formData.append('brand_id', String(brandId ?? 0));
+  if (draftId !== undefined) {
+    formData.append('draft_id', String(draftId));
+  }
 
   const { data } = await apiClient.post('/campaign-attachments-and-image/upload', formData, {
     headers: {
@@ -90,7 +93,7 @@ export async function uploadAsset(file: File, _folder = 'uploads', brandId?: num
   return { url, filename, mimeType, assetId };
 }
 
-export async function deleteUploadedAsset(assetId: string | number | undefined, brandId?: number, kind: 'image' | 'attachment' = 'attachment') {
+export async function deleteUploadedAsset(assetId: string | number | undefined, brandId?: number, draftId?: number, kind: 'image' | 'attachment' = 'attachment') {
   if (!assetId) {
     return false;
   }
@@ -102,7 +105,10 @@ export async function deleteUploadedAsset(assetId: string | number | undefined, 
 
   try {
     await apiClient.delete(endpoint, {
-      params: brandId ? { brand_id: brandId } : undefined,
+      params: {
+        ...(brandId ? { brand_id: brandId } : {}),
+        ...(draftId !== undefined ? { draft_id: draftId } : {}),
+      },
     });
     return true;
   } catch (error) {

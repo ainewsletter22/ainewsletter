@@ -226,7 +226,6 @@ export const lookupService = {
       if (useCache) lookupCache.set(cacheKey, data);
       return data;
     } catch (error) {
-      console.error('Failed to fetch sending limits:', error);
       return [];
     }
   },
@@ -247,7 +246,6 @@ export const lookupService = {
       if (useCache) lookupCache.set(cacheKey, data);
       return data;
     } catch (error) {
-      console.error('Failed to fetch day of months:', error);
       return [];
     }
   },
@@ -268,7 +266,6 @@ export const lookupService = {
       if (useCache) lookupCache.set(cacheKey, data);
       return data;
     } catch (error) {
-      console.error('Failed to fetch post everies:', error);
       return [];
     }
   },
@@ -289,7 +286,6 @@ export const lookupService = {
       if (useCache) lookupCache.set(cacheKey, data);
       return data;
     } catch (error) {
-      console.error('Failed to fetch durations:', error);
       return [];
     }
   },
@@ -317,13 +313,11 @@ export const lookupService = {
       } catch (e: any) {
         if (e.response?.status === 404) {
           // Endpoint doesn't exist, use durations instead
-          console.warn('GET /lookup/stop-post-afters not found, using /lookup/durations');
           return this.getDurations(useCache);
         }
         throw e;
       }
     } catch (error) {
-      console.error('Failed to fetch stop post afters:', error);
       return [];
     }
   },
