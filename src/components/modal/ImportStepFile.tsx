@@ -6,19 +6,23 @@ import type { ParsedImportData } from "../../types/domain";
 function ImportStepFile({ onClose, onSuccess }: { onClose: () => void; onSuccess: (data: ParsedImportData) => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const readFile = async (selectedFile: File) => {
+    setIsProcessing(true);
     try {
       const text = await selectedFile.text();
       const parsed = parseTextToRows(text);
       if (parsed.rows.length === 0) {
         setError("The selected file does not contain any importable rows.");
+        setIsProcessing(false);
         return;
       }
       onSuccess(parsed);
     } catch (err) {
       setError("Unable to read the file. Please choose a valid CSV or text file.");
+      setIsProcessing(false);
       console.error(err);
     }
   };
@@ -35,9 +39,9 @@ function ImportStepFile({ onClose, onSuccess }: { onClose: () => void; onSuccess
           <span className="font-bold">DATA:</span> (CSV, TXT) with columns like Full Name, Phone Number, Email Address, Website
         </p>
         <div
-          className="border-2 border-dashed border-gray-200 rounded-xl h-55 flex flex-col items-center justify-center gap-3 mb-6 cursor-pointer hover:border-blue-400 transition-colors bg-gray-50"
-          onClick={() => inputRef.current?.click()}
-          onDrop={e => { e.preventDefault(); setFile(e.dataTransfer.files[0]); }}
+          className={`border-2 border-dashed rounded-xl h-55 flex flex-col items-center justify-center gap-3 mb-6 bg-gray-50 ${isProcessing ? "border-gray-200 cursor-not-allowed" : "border-gray-200 cursor-pointer hover:border-blue-400 transition-colors"}`}
+          onClick={() => !isProcessing && inputRef.current?.click()}
+          onDrop={e => { if (!isProcessing) { e.preventDefault(); setFile(e.dataTransfer.files[0]); } }}
           onDragOver={e => e.preventDefault()}
         >
           <input
@@ -45,13 +49,15 @@ function ImportStepFile({ onClose, onSuccess }: { onClose: () => void; onSuccess
             type="file"
             accept=".csv,.txt"
             className="hidden"
+            disabled={isProcessing}
             onChange={e => {
               const next = e.target.files?.[0] ?? null;
               setFile(next);
-              if (next) void readFile(next);
             }}
           />
-          {file ? (
+          {isProcessing ? (
+            <span className="text-sm text-gray-500">Processing file...</span>
+          ) : file ? (
             <span className="text-sm text-blue-600 font-medium">{file.name}</span>
           ) : (
             <>
@@ -62,13 +68,13 @@ function ImportStepFile({ onClose, onSuccess }: { onClose: () => void; onSuccess
           {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
         </div>
         <div className="flex gap-3 justify-center items-center">
-          <button onClick={onClose} className="border border-gray-300 text-gray-700 text-sm font-semibold px-5 py-3 rounded-lg hover:bg-gray-50 w-30">Cancel</button>
+          <button onClick={onClose} disabled={isProcessing} className="border border-gray-300 text-gray-700 text-sm font-semibold px-5 py-3 rounded-lg hover:bg-gray-50 w-30 disabled:opacity-50 disabled:cursor-not-allowed">Cancel</button>
           <button
             onClick={() => file && void readFile(file)}
-            disabled={!file}
+            disabled={!file || isProcessing}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold px-5 py-3 rounded-lg transition-colors"
           >
-            + Import File
+            {isProcessing ? "Processing..." : "+ Import File"}
           </button>
         </div>
       </div>

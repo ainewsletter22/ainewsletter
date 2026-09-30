@@ -17,7 +17,7 @@ interface Client {
 }
  
 
-function AddClientModal({ onClose, onAdd }: { onClose: () => void; onAdd: (c: Partial<Client>) => Promise<void> }) {
+function AddClientModal({ onClose, onAdd, error: externalError }: { onClose: () => void; onAdd: (c: Partial<Client>) => Promise<void>; error?: string }) {
   const [form, setForm] = useState({ businessName: "", phone: "", email: "", website: "" });
   const [error, setError] = useState("");
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -25,19 +25,29 @@ function AddClientModal({ onClose, onAdd }: { onClose: () => void; onAdd: (c: Pa
     if (error) setError("");
   };
 
+  const isValidUrl = (url: string) => {
+    if (!url.trim()) return true; // Empty is allowed
+    try {
+      new URL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const handleSave = async () => {
+    setError("");
     if (!form.businessName.trim() || !form.email.trim()) {
       setError("Client name and email are required.");
       return;
     }
 
-    try {
-      await onAdd({ ...form, group: "Not Contacted", emailsSent: 0 });
-      onClose();
-    } catch (err) {
-      console.error("Failed to add client from modal", err);
-      setError("Unable to save client. Check the console for details.");
+    if (form.website.trim() && !isValidUrl(form.website)) {
+      setError("Website must be a valid URL with protocol (e.g., https://example.com).");
+      return;
     }
+
+    await onAdd({ ...form, group: "Not Contacted", emailsSent: 0 });
   };
 
   return (
@@ -65,7 +75,7 @@ function AddClientModal({ onClose, onAdd }: { onClose: () => void; onAdd: (c: Pa
             <input className="w-full bg-gray-100 rounded-lg px-4 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Client Website" value={form.website} onChange={set("website")} />
           </div>
         </div>
-        {error ? <div className="mb-4 text-sm text-red-600">{error}</div> : null}
+        {(error || externalError) ? <div className="mb-4 text-sm text-red-600">{error || externalError}</div> : null}
         <button
           onClick={handleSave}
           className="bg-[#337DD3] hover:bg-[#0a65cd] text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors"

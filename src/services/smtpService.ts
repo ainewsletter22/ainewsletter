@@ -56,7 +56,6 @@ export const smtpService = {
       const response = await apiClient.get(`/smtp-setting/get-one/${id}`);
       return response.data.data;
     } catch (error) {
-      console.error(`Failed to fetch SMTP settings ${id}:`, error);
       return undefined;
     }
   },

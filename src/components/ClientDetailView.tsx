@@ -38,7 +38,7 @@ interface Client {
 }
 
 function ClientDetailView({
-  folder, clients, onBack, onAddClient, onImport, onDeleteClient, onUpdateClient,
+  folder, clients, onBack, onAddClient, onImport, onDeleteClient, onUpdateClient, isImporting = false,
 }: {
   folder: Folder;
   clients: Client[];
@@ -47,6 +47,7 @@ function ClientDetailView({
   onImport: () => void;
   onDeleteClient: (id: number) => void;
   onUpdateClient: (id: number, payload: ClientUpdatePayload) => Promise<void>;
+  isImporting?: boolean;
 }) {
   const [activeTab, setActiveTab] = useState<"clients" | "emails">("clients");
   const [search, setSearch] = useState("");
@@ -157,8 +158,8 @@ function ClientDetailView({
                   </div>
                 )}
               </div>
-              <button onClick={onImport} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-4 rounded-lg hover:bg-gray-50 transition-colors">
-                <img src={importContact} className="w-5 h-5" alt="Import Contact" /> IMPORT CONTACT
+              <button onClick={onImport} disabled={isImporting} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-4 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
+                <img src={importContact} className="w-5 h-5" alt="Import Contact" /> {isImporting ? "IMPORTING..." : "IMPORT CONTACT"}
               </button>
               <button onClick={onAddClient} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-4 rounded-lg transition-colors">
                 + ADD NEW CLIENT
@@ -181,67 +182,90 @@ function ClientDetailView({
           </div>
  
           {activeTab === "clients" ? (
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  {["Client Name", "Email", "Phone", "Website", "GMB", "Facebook", "X (twitter)", "Instagram", "Yelp", "Action"].map(h => (
-                    <th key={h} className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {paginated.map((c, i) => (
-                  <tr key={c.id} className={`border-b border-gray-50 hover:bg-blue-50/20 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}>
-                    <td className="px-3 py-5 text-sm text-gray-800 font-medium whitespace-nowrap">{c.businessName}</td>
-                    <td className="px-3 py-5 text-sm text-gray-600 whitespace-nowrap">{c.email}</td>
-                    <td className="px-3 py-5 text-sm text-blue-600 whitespace-nowrap">{c.phone ?? "—"}</td>
-                    <td className="px-3 py-5 text-sm text-blue-600 whitespace-nowrap">{c.website ?? "—"}</td>
-                    {[
-                      { val: c.gmb, color: "bg-[rgba(219,142,17,0.18)] text-[#DB8E11]" },
-                      { val: c.facebook, color: "bg-[rgba(33,79,212,0.18)] text-[#214FD4]" },
-                      { val: c.twitter, color: "bg-[rgba(105,105,105,0.18)] text-[#696969]" },
-                      { val: c.instagram, color: "bg-[rgba(222,89,107,0.18)] text-[#DE596B]" },
-                      { val: c.yelp, color: "bg-[rgba(250,63,63,0.18)] text-[#FA3F3F]" }
-                    ].map((platform, idx) => {
-                      const hasUrl = platform.val && platform.val !== "@NONE" && platform.val !== "Not found" && platform.val !== "null" && platform.val !== "";
-                      return (
-                        <td key={idx} className="px-3 py-5">
-                          <button
-                            disabled={!hasUrl}
-                            onClick={() => hasUrl && window.open(platform.val?.startsWith("http") ? platform.val : `https://${platform.val}`, "_blank")}
-                            className={`text-xs font-medium px-5 py-2 rounded-lg transition-colors ${hasUrl ? platform.color + " hover:opacity-80" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
-                          >
-                            Visit
-                          </button>
-                        </td>
-                      );
-                    })}
-                    <td className="px-3 py-5 flex items-center gap-1">
-                      <button 
-                        onClick={() => setEditingClient(c)} 
-                        className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-500 transition-colors" 
-                        title="Edit"
-                      ><img src={editIcon} alt="edit" className="w-5 h-5" /></button>
-                      <button onClick={() => onDeleteClient(c.id)} className="p-1.5 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors" title="Delete"><img src={trashIcon} alt="trash" /></button>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-45">Client Name</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-45">Email</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-35">Phone</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-35">Website</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">GMB</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">Facebook</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">X (twitter)</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">Instagram</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">Yelp</th>
+                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {paginated.map((c, i) => (
+                    <tr key={c.id} className={`border-b border-gray-50 hover:bg-blue-50/20 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}>
+                      <td className="px-3 py-5 text-sm text-gray-800 font-medium">
+                        <div className="max-w-45 truncate" title={c.businessName}>{c.businessName}</div>
+                      </td>
+                      <td className="px-3 py-5 text-sm text-gray-600">
+                        <div className="max-w-45 truncate" title={c.email}>{c.email}</div>
+                      </td>
+                      <td className="px-3 py-5 text-sm text-blue-600">
+                        <div className="max-w-35 truncate" title={c.phone ?? "—"}>{c.phone ?? "—"}</div>
+                      </td>
+                      <td className="px-3 py-5 text-sm text-blue-600">
+                        <div className="max-w-35 truncate" title={c.website ?? "—"}>{c.website ?? "—"}</div>
+                      </td>
+                      {[
+                        { val: c.gmb, color: "bg-[rgba(219,142,17,0.18)] text-[#DB8E11]" },
+                        { val: c.facebook, color: "bg-[rgba(33,79,212,0.18)] text-[#214FD4]" },
+                        { val: c.twitter, color: "bg-[rgba(105,105,105,0.18)] text-[#696969]" },
+                        { val: c.instagram, color: "bg-[rgba(222,89,107,0.18)] text-[#DE596B]" },
+                        { val: c.yelp, color: "bg-[rgba(250,63,63,0.18)] text-[#FA3F3F]" }
+                      ].map((platform, idx) => {
+                        const hasUrl = platform.val && platform.val !== "@NONE" && platform.val !== "Not found" && platform.val !== "null" && platform.val !== "";
+                        return (
+                          <td key={idx} className="px-3 py-5">
+                            <button
+                              disabled={!hasUrl}
+                              onClick={() => hasUrl && window.open(platform.val?.startsWith("http") ? platform.val : `https://${platform.val}`, "_blank")}
+                              className={`text-xs font-medium px-4 py-2 rounded-lg transition-colors min-w-15 ${hasUrl ? platform.color + " hover:opacity-80" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
+                            >
+                              Visit
+                            </button>
+                          </td>
+                        );
+                      })}
+                      <td className="px-3 py-5 flex items-center gap-1">
+                        <button 
+                          onClick={() => setEditingClient(c)} 
+                          className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-500 transition-colors" 
+                          title="Edit"
+                        ><img src={editIcon} alt="edit" className="w-5 h-5" /></button>
+                        <button onClick={() => onDeleteClient(c.id)} className="p-1.5 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors" title="Delete"><img src={trashIcon} alt="trash" /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <table className="w-full">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
-                  {["Business Name", "Email", "Group", <img src={emailBadge} alt="Email" />, "Actions"].map((h, index) => (
-                    <th key={index} className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5">{h}</th>
-                  ))}
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-45">Business Name</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-45">Email</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-25">Group</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-20"><img src={emailBadge} alt="Email" /></th>
+                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-20">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {paginated.map((c, i) => (
                   <tr key={c.id} className={`border-b border-gray-50 hover:bg-blue-50/20 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}>
-                    <td className="px-4 py-5 text-sm text-gray-800 font-medium">{c.businessName}</td>
-                    <td className="px-4 py-5 text-sm text-gray-600">{c.email}</td>
+                    <td className="px-4 py-5 text-sm text-gray-800 font-medium">
+                      <div className="max-w-45 truncate" title={c.businessName}>{c.businessName}</div>
+                    </td>
+                    <td className="px-4 py-5 text-sm text-gray-600">
+                      <div className="max-w-45 truncate" title={c.email}>{c.email}</div>
+                    </td>
                     <td className="px-4 py-5">
                       <button className={`text-sm font-medium px-1 ${c.group === "Contacted" ? "text-green-600" : "text-blue-500"}`}>{c.group}</button>
                     </td>

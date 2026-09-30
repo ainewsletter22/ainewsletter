@@ -5,10 +5,16 @@ export interface HeadlinePayload {
   name: string;
 }
 
+export interface DraftHeadlinePayload {
+  draft_id: number;
+  name: string;
+}
+
 export interface HeadlineItem {
   id?: number;
   user_id?: number;
   brand_id?: number;
+  draft_id?: number;
   name: string;
   status?: number;
   createdAt?: string;
@@ -87,5 +93,28 @@ export const headlineService = {
       }
       throw error;
     }
+  },
+
+  // Draft-based headline endpoints for AI flow
+  async createDraftHeadline(draftId: number, name: string): Promise<HeadlineItem> {
+    console.log('[headlineService] createDraftHeadline', { draftId, name });
+    const response = await apiClient.post('/headline/draft/create', { draft_id: draftId, name });
+    const data = response.data?.data ?? response.data;
+    console.log('[headlineService] createDraftHeadline response', data);
+    return data;
+  },
+
+  async getHeadlinesByDraft(draftId: number): Promise<HeadlineItem[]> {
+    console.log('[headlineService] getHeadlinesByDraft', draftId);
+    const response = await apiClient.get(`/headline/draft/${draftId}`);
+    const data = response.data?.data ?? [];
+    console.log('[headlineService] getHeadlinesByDraft response', data);
+    return data;
+  },
+
+  async deleteDraftHeadline(headlineId: number): Promise<void> {
+    console.log('[headlineService] deleteDraftHeadline', headlineId);
+    await apiClient.delete(`/headline/draft/delete-one/${headlineId}`);
+    console.log('[headlineService] deleteDraftHeadline complete');
   },
 };

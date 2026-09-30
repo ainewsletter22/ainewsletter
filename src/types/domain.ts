@@ -45,6 +45,7 @@ export interface Category {
   description?: string | null;
   created_at?: string | null;
   createdAt?: string | null;
+  count?: number | null;
 }
 
 export interface RawLead {

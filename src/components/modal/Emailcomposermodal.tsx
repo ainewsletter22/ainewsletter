@@ -1,18 +1,43 @@
-import { useState, useEffect, useRef, type ReactNode, type ChangeEvent, type MouseEvent } from "react";
-import ReactQuill from "react-quill-new";
-import type { ComposeForm, ConfirmForm, ComposerAttachment, TemplateLayoutBlock } from "../../types/Types";
+import { useState, useEffect, useRef, useCallback, memo, type ReactNode, type ChangeEvent, type MouseEvent } from "react";
+import type { ComposeForm, ConfirmForm, ComposerAttachment, TemplateLayoutBlock, Brand, SendVia } from "../../types/Types";
+import type { Category } from "../../types/domain";
 import { useAuthStore } from "../../store/useAuthStore";
 import { lookupService, type LookupItem } from "../../services/lookupService";
 import { aiWriterService } from "../../services/aiWriterService";
 import { composerWorkflowService } from "../../services/composerWorkflowService";
 import { brandService } from "../../services/brandService";
+import { clientService } from "../../services/clientService";
 import { deleteUploadedAsset, uploadAsset } from "../../services/apiClient";
+import { validateBroadcastSelection, getValidationErrorMessage } from "../../utils/sendValidation";
+import { draftService } from "../../services/draftService";
+import { appendFooterToEmail } from "../../utils/emailFooter";
 import { useParams } from "react-router-dom";
-import "react-quill-new/dist/quill.snow.css";
+import { ComposerRichTextEditor, type ComposerEditorHandle } from "./composer-tiptap/ComposerRichTextEditor";
+import { ComposerToolbar } from "./composer-tiptap/ComposerToolbar";
+import { useAiWriterBridge } from "./composer-tiptap/useAiWriterBridge";
+import { EmailTemplateSnapshot } from "../Emailtemplatesnapshot";
+import addFile from "../../assets/addFile.png"
+import addImage from "../../assets/addImage.png"
+import aiWriter from "../../assets/aiWriter.png"
+import aiWriterBlue from "../../assets/aiWriterBlue.png"
+import logo from "../../assets/mainLogo.png"
 
-// ─── Quill dynamic import ─────────────────────────────────────────────────────
-// NOTE: Install with: npm install react-quill quill
-// Then import at the top of your app: import 'react-quill/dist/quill.snow.css';
+// ─── Editor engine ────────────────────────────────────────────────────────
+// The editor is TipTap (see ./composer-tiptap), not Quill. Quill was removed
+// entirely -- it was already dead code in this file (RichTextEditor/Quill
+// wrapper was defined but never actually rendered anywhere; the blank
+// template body and the 5 fixed templates' text blocks were both really
+// running on raw contentEditable + document.execCommand, which is what was
+// causing the persistent "typed content deleted on highlight" bug).
+// NOTE: install with `npm install @tiptap/core @tiptap/react @tiptap/starter-kit
+// @tiptap/extension-underline @tiptap/extension-text-style @tiptap/extension-color
+// @tiptap/extension-text-align @tiptap/extension-link @tiptap/extension-image lucide-react`
+
+// ─── Type additions needed in ../../types/Types.ts ───────────────────────
+// TemplateLayoutBlock needs two new OPTIONAL fields for requirements #4/#5:
+//   imageLinkUrl?: string;  // requirement #4: image slot can link out
+//   removed?: boolean;      // requirement #5: image slot removed from this send, but not deleted from the layout
+// Both are optional so existing stored layouts without them still typecheck.
 
 type ComposerStep = "compose" | "confirm" | "sent";
 
@@ -23,8 +48,20 @@ type TemplateLayoutDefinition = {
 
 interface Props {
   onClose: () => void;
-  prefilled?: { subject?: string; body?: string; preview?: string; aiResult?: Record<string, unknown> };
+  prefilled?: {
+    subject?: string;
+    body?: string;
+    preview?: string;
+    aiResult?: Record<string, unknown>;
+    templateId?: number;
+    templateLayout?: any[];
+    attachments?: any[];
+    footer?: string;
+    address?: string;
+  };
   templateId?: number;
+  brand?: Brand | null;
+  draftId?: number;
 }
 
 function getInitialLetter(value?: string) {
@@ -33,26 +70,18 @@ function getInitialLetter(value?: string) {
   return (match?.[0] || "A").toUpperCase();
 }
 
-function normalizeRichTextContent(value?: string) {
+function normalizeRichTextContent(value?: string | null) {
   if (!value) return "";
 
   return value
-    .replace(/&nbsp;/gi, " ")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, "&");
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " "); // Convert &nbsp; to regular space to preserve spacing
 }
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function isValidEmail(value?: string) {
-  if (!value) return false;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
 
 function getValueByPath(source: unknown, path: string): unknown {
   if (!source || typeof source !== "object") return undefined;
@@ -148,6 +177,35 @@ function resolveImageUrls(source: unknown): string[] {
   }
 
   return [];
+}
+
+async function cropImageToBox(
+  sourceUrl: string,
+  boxWidthPx: number,
+  boxHeightPx: number,
+  offsetXPx: number
+): Promise<Blob> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.crossOrigin = "anonymous";
+    el.onload = () => resolve(el);
+    el.onerror = reject;
+    el.src = sourceUrl;
+  });
+
+  const scale = Math.max(boxWidthPx / img.width, boxHeightPx / img.height);
+  const drawW = img.width * scale;
+  const drawH = img.height * scale;
+  const dx = (boxWidthPx - drawW) / 2 + offsetXPx;
+  const dy = (boxHeightPx - drawH) / 2;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = boxWidthPx;
+  canvas.height = boxHeightPx;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(img, dx, dy, drawW, drawH);
+
+  return new Promise((resolve) => canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.9));
 }
 
 // ─── Rich Text Editor (Quill wrapper) ────────────────────────────────────────
@@ -384,18 +442,238 @@ function safeBuildTemplateLayout(templateId?: number, aiResult?: Record<string, 
 const RICH_TEXT_DISPLAY_CLASS = "[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1 [&_blockquote]:border-l-4 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-500";
 const RICH_TEXT_EMAIL_STYLE = "ul{list-style:disc;padding-left:1.25em;margin:8px 0;}ol{list-style:decimal;padding-left:1.25em;margin:8px 0;}li{margin:2px 0;}blockquote{border-left:4px solid #e2e8f0;padding-left:12px;color:#64748b;margin:8px 0;}";
 
-function buildLayoutHtml(blocks: TemplateLayoutBlock[]) {
-  const renderBlock = (block: TemplateLayoutBlock) => {
-    if (block.role === "image") {
-      if (!block.imageUrl) return "";
-      return `<div style="margin:16px 0;"><img src="${block.imageUrl}" alt="${block.label}" style="width:100%;border-radius:12px;display:block;" /></div>`;
-    }
-    if (!block.text) return "";
-    return `<div style="margin:12px 0;">${block.text}</div>`;
+// Default width (as a % of the editor) newly-inserted blank-template images
+// start at, before the user drags the size slider. Mirrors the "small
+// default, then let the user adjust" behavior the 5 fixed templates already
+// have for their image slots.
+const DEFAULT_BLANK_IMAGE_WIDTH = 45;
+
+function buildLayoutHtml(blocks: TemplateLayoutBlock[], templateId?: number | null) {
+  const isBlank = !templateId || templateId === 0 || !blocks || blocks.length === 0;
+
+  if (isBlank) {
+    // Blank template: just render the body HTML with rich text styles
+    const bodyBlock = blocks?.find(b => b.role === "body");
+    const html = bodyBlock?.text || "";
+    return `<style>${RICH_TEXT_EMAIL_STYLE}img{display:inline-block;vertical-align:middle;border-radius:8px;cursor:pointer;margin:0 4px;}</style><div style="font-family:Arial,Helvetica,sans-serif;line-height:1.6;color:#243126;padding:24px;">${html}</div>`;
+  }
+
+  const list = blocks;
+  const bodyBlocksOrdered = list.filter((b) => b.role === "body");
+  const imageBlocks = list.filter((b) => b.role === "image");
+  const headlineBlock = list.find((b) => b.role === "headline");
+  const footerBlock = list.find((b) => b.role === "footer");
+
+  const renderHeadline = () => {
+    if (!headlineBlock || headlineBlock.removed || !headlineBlock.text) return "";
+    return `<div style="margin:24px 0 0 0;text-align:center;font-size:24px;font-weight:bold;line-height:1.2;color:#1e293b;">${headlineBlock.text}</div>`;
   };
 
-  return `<style>${RICH_TEXT_EMAIL_STYLE}</style><div style="font-family:Arial,sans-serif;line-height:1.6;color:#243126;">${blocks.map(renderBlock).join("")}</div>`;
+  const renderBody = () => {
+    return bodyBlocksOrdered.map(b => {
+      if (b.removed || !b.text) return "";
+      return `<div style="margin:12px 0;text-align:center;font-size:14px;line-height:1.5;color:#475569;">${b.text}</div>`;
+    }).join("");
+  };
+
+  const renderFooter = () => {
+    if (!footerBlock || footerBlock.removed || !footerBlock.text) return "";
+    return `<div style="margin-top:24px;padding-top:16px;border-top:1px solid #f1f5f9;background-color:#f8fafc;text-align:center;font-size:12px;line-height:1.25;color:#94a3b8;">${footerBlock.text}</div>`;
+  };
+
+  // ─── Bulletproof cropped image for email clients ──────────────────────────
+  // Outlook desktop (Win) renders with Word's engine: no object-fit, no
+  // transform, unreliable overflow:hidden. VML `v:fill type="frame"` is the
+  // only way to get cover-style cropping there. Everywhere else, a plain
+  // background-image + background-size:cover on the same box does the job.
+  // offsetX (px) is approximated as a background-position shift for non-mso
+  // clients; Outlook's VML fill always center-crops (offset is not
+  // achievable in Word's VML renderer, so it degrades to center-crop there).
+  const renderImage = (block?: TemplateLayoutBlock, extraStyle = "") => {
+    if (!block || block.removed || !block.imageUrl) return "";
+
+    const widthValue = block.imageWidth && block.imageWidth.trim() ? block.imageWidth : "100%";
+    const offsetValue = typeof block.imageOffsetX === "number" ? block.imageOffsetX : 0;
+    const heightMatch = extraStyle.match(/height:\s*(\d+)px/);
+    const heightPx = heightMatch ? Number(heightMatch[1]) : 200; // fallback, all callers pass an explicit height today
+
+    // Rough px→% conversion for background-position so a dragged offset still
+    // reads as "roughly the same crop" outside Outlook. Good enough visually;
+    // exact parity isn't achievable without knowing the source image's
+    // natural width, which we don't have client-side here.
+    const bgPosX = 50 - Math.max(-50, Math.min(50, offsetValue / 3));
+
+    return `
+  <div style="margin:16px 0;${extraStyle}width:${widthValue};max-width:100%;overflow:hidden;">
+    <!--[if mso]>
+    <v:rect xmlns:v="urn:schemas-microsoft-com:vml" fill="true" stroke="false" style="width:100%;height:${heightPx}px;">
+      <v:fill type="frame" src="${block.imageUrl}" color="#ffffff" />
+      <v:textbox inset="0,0,0,0"><div style="mso-hide:all;">
+    <![endif]-->
+    <div style="background-image:url('${block.imageUrl}');background-repeat:no-repeat;background-position:${bgPosX}% center;background-size:cover;height:${heightPx}px;line-height:${heightPx}px;font-size:1px;">
+      <!--[if !mso]><!-->
+      <img src="${block.imageUrl}" alt="${block.label}" width="1" height="1" style="opacity:0;width:1px;height:1px;display:block;border:0;" />
+      <!--<![endif]-->
+    </div>
+    <!--[if mso]>
+      </div></v:textbox>
+    </v:rect>
+    <![endif]-->
+  </div>`.trim();
+  };
+
+  const contentStyle = "font-family:Arial,sans-serif;line-height:1.6;color:#243126;";
+
+  switch (templateId) {
+    // Hero banner
+    case 1:
+      return `<style>${RICH_TEXT_EMAIL_STYLE}</style><div style="${contentStyle}border-radius:30px;border:1px solid #e2e8f0;background-color:#f8fafc;padding:12px;"><div style="border-radius:24px;border:1px solid #e2e8f0;background-color:#ffffff;overflow:hidden;">${renderImage(imageBlocks[0], "height:224px;")}<div style="padding:24px 24px 8px 24px;">${renderHeadline()}<div style="margin-top:16px;">${renderBody()}</div></div>${renderFooter()}</div></div>`;
+
+    // Portrait-focused
+    case 2:
+      return `<style>${RICH_TEXT_EMAIL_STYLE}</style><div style="${contentStyle}border-radius:30px;border:1px solid #e2e8f0;background-color:#f8fafc;padding:12px;"><div style="border-radius:24px;border:1px solid #e2e8f0;background-color:#ffffff;overflow:hidden;"><div style="padding:24px 24px 8px 24px;">${renderHeadline()}<div style="margin-top:16px;">${renderBody()}</div>${renderImage(imageBlocks[0], "margin-top:16px;height:224px;")}</div>${renderFooter()}</div></div>`;
+
+    // Split image
+    case 3: {
+      const visible = imageBlocks.filter((b) => !b.removed && b.imageUrl);
+      let imagesHtml = "";
+      if (visible.length === 1) {
+        imagesHtml = `<div style="margin-top:24px;text-align:center;">${renderImage(visible[0], "height:144px;max-width:384px;")}</div>`;
+      } else if (visible.length >= 2) {
+        imagesHtml = `<table style="margin-top:24px;width:100%;border-collapse:collapse;"><tr><td style="width:50%;padding:0 6px 0 0;vertical-align:top;">${renderImage(imageBlocks[0], "height:144px;")}</td><td style="width:50%;padding:0 0 0 6px;vertical-align:top;">${renderImage(imageBlocks[1], "height:144px;")}</td></tr></table>`;
+      }
+      return `<style>${RICH_TEXT_EMAIL_STYLE}</style><div style="${contentStyle}border-radius:30px;border:1px solid #e2e8f0;background-color:#f8fafc;padding:12px;"><div style="border-radius:24px;border:1px solid #e2e8f0;background-color:#ffffff;overflow:hidden;"><div style="padding:24px 24px 8px 24px;">${renderHeadline()}<div style="margin-top:16px;">${renderBody()}</div>${imagesHtml}</div>${renderFooter()}</div></div>`;
+    }
+
+    // Three-card
+    case 4: {
+      const visible = imageBlocks.filter((b) => !b.removed && b.imageUrl);
+      const cardStyle = "background-color:#ffffff;padding:6px;box-shadow:0 1px 2px rgba(0,0,0,0.05);height:144px;overflow:hidden;";
+      let imagesHtml = "";
+      if (visible.length === 1) {
+        imagesHtml = `<div style="margin-top:24px;text-align:center;"><div style="${cardStyle}max-width:384px;">${renderImage(visible[0])}</div></div>`;
+      } else if (visible.length === 2) {
+        imagesHtml = `<table style="margin-top:24px;width:100%;border-collapse:collapse;"><tr><td style="width:50%;padding:0 5px 0 0;vertical-align:top;"><div style="${cardStyle}">${renderImage(imageBlocks[0])}</div></td><td style="width:50%;padding:0 0 0 5px;vertical-align:top;"><div style="${cardStyle}">${renderImage(imageBlocks[1])}</div></td></tr></table>`;
+      } else if (visible.length >= 3) {
+        imagesHtml = `<table style="margin-top:24px;width:100%;border-collapse:collapse;"><tr><td style="width:33.33%;padding:0 5px 0 0;vertical-align:top;"><div style="${cardStyle}">${renderImage(imageBlocks[0])}</div></td><td style="width:33.33%;padding:0 5px;vertical-align:top;"><div style="${cardStyle}">${renderImage(imageBlocks[1])}</div></td><td style="width:33.33%;padding:0 0 0 5px;vertical-align:top;"><div style="${cardStyle}">${renderImage(imageBlocks[2])}</div></td></tr></table>`;
+      }
+      return `<style>${RICH_TEXT_EMAIL_STYLE}</style><div style="${contentStyle}border-radius:30px;border:1px solid #e2e8f0;background-color:#f8fafc;padding:12px;"><div style="border-radius:24px;border:1px solid #e2e8f0;background-color:#ffffff;overflow:hidden;"><div style="padding:24px 24px 8px 24px;">${renderHeadline()}<div style="margin-top:16px;">${renderBody()}</div>${imagesHtml}</div>${renderFooter()}</div></div>`;
+    }
+
+    // Landscape spotlight (text / image / text)
+    case 5: {
+      const [top, bottom] = bodyBlocksOrdered;
+      return `<style>${RICH_TEXT_EMAIL_STYLE}</style><div style="${contentStyle}border-radius:30px;border:1px solid #e2e8f0;background-color:#f8fafc;padding:12px;"><div style="border-radius:24px;border:1px solid #e2e8f0;background-color:#ffffff;overflow:hidden;"><div style="padding:24px 24px 8px 24px;">${renderHeadline()}<div style="margin-top:16px;text-align:center;font-size:14px;line-height:1.5;color:#475569;">${top?.text || ""}</div>${renderImage(imageBlocks[0], "margin-top:20px;height:176px;")}<div style="margin-top:20px;text-align:center;font-size:14px;line-height:1.5;color:#475569;">${bottom?.text || ""}</div></div>${renderFooter()}</div></div>`;
+    }
+
+    default:
+      return `<style>${RICH_TEXT_EMAIL_STYLE}</style><div style="${contentStyle}border-radius:30px;border:1px solid #e2e8f0;background-color:#f8fafc;padding:12px;"><div style="border-radius:24px;border:1px solid #e2e8f0;background-color:#ffffff;overflow:hidden;"><div style="padding:24px 24px 8px 24px;">${renderHeadline()}<div style="margin-top:16px;">${renderBody()}</div>${renderImage(imageBlocks[0], "margin-top:24px;height:176px;")}</div>${renderFooter()}</div></div>`;
+  }
 }
+
+// One editable block (headline / body / footer) for the 5 preset templates.
+//
+// This used to be an inline `<div ref={(el) => {...}}>` built fresh inside
+// TemplatePreviewCanvas's render. That ref callback's identity changed on
+// every single render of TemplatePreviewCanvas (a brand new arrow function
+// each time), so React tore down and reattached it constantly -- not just on
+// mount. Every reattach re-ran the "sync" check `el.innerHTML !== htmlContent`
+// against the LIVE DOM, which by design has already diverged from
+// `block.text` while typing (state only updates onBlur). So the guard that
+// was supposed to protect the DOM was instead the thing clobbering it: any
+// unrelated state update anywhere in EmailComposerModal caused a re-render, which tore down/rebuilt the
+// ref, which stomped whatever had just been typed or highlighted back to the
+// last-blurred value.
+//
+// Fix: give the DOM node a stable identity (a real useRef, not an inline
+// callback) and only ever push block.text -> DOM once, when this component
+// mounts for a given block.id. After that the DOM is the uncontrolled source
+// of truth, synced on every keystroke via TipTap's onUpdate -- see
+// ComposerRichTextEditor.
+const EditableTextBlock = memo(function EditableTextBlock({
+  block,
+  className,
+  placeholder,
+  isActive,
+  onBlockTextChange,
+  onEditorFocus,
+  onActivateBlock,
+  onSelectionChange,
+  enableImages
+}: {
+  block: TemplateLayoutBlock;
+  className: string;
+  placeholder?: string;
+  isActive: boolean;
+  onBlockTextChange?: (blockId: string, value: string) => void;
+  onEditorFocus?: (blockId: string, handle: ComposerEditorHandle) => void;
+  onActivateBlock?: (blockId: string) => void;
+  onSelectionChange?: (blockId: string, handle: ComposerEditorHandle, selectedText: string) => void;
+  enableImages?: boolean;
+}) {
+  const handleRef = useRef<ComposerEditorHandle>(null);
+
+  return (
+    <div
+      className={`rounded-xl transition-shadow ${isActive ? "ring-2 ring-blue-400 ring-offset-1" : "hover:ring-1 hover:ring-slate-200"}`}
+    >
+      <ComposerRichTextEditor
+        ref={handleRef}
+        content={block.text || ""}
+        placeholder={block.placeholder || placeholder}
+        className={`w-full bg-transparent border-none outline-none whitespace-pre-wrap ${RICH_TEXT_DISPLAY_CLASS} ${className}`}
+        enableImages={enableImages}
+        onChange={(html) => {
+          onBlockTextChange?.(block.id, html);
+        }}
+        onFocus={() => {
+          if (handleRef.current) onEditorFocus?.(block.id, handleRef.current);
+          onActivateBlock?.(block.id);
+        }}
+        onSelectionChange={(selectedText) => {
+          if (handleRef.current) onSelectionChange?.(block.id, handleRef.current, selectedText);
+        }}
+      />
+    </div>
+  );
+});
+
+// Shared outer shell: light neutral mounting frame + a white "email card"
+// with a real brand header and a quiet disclaimer footer, instead of the
+// dark UI-chrome toolbar that was identical across every template.
+//
+// This MUST live at module scope, not inside TemplatePreviewCanvas. It used
+// to be declared inline there (`const Shell = (...) => (...)`), which meant
+// it got a brand-new function identity on every render of
+// TemplatePreviewCanvas. React tells components apart by function identity,
+// so a new `Shell` reference on every render made React treat it as a
+// completely different component type at that spot in the tree -- which
+// tears down and remounts everything inside it, `EditableTextBlock`/
+// ComposerRichTextEditor included, `key`s notwithstanding. Since
+// TemplatePreviewCanvas re-renders on every keystroke/focus/state change in
+// ComposeStep (it isn't memoized), that meant every interaction destroyed
+// and recreated the TipTap editors mid-interaction -- clicking a block lost
+// focus immediately, and typing lost the keystroke immediately, because the
+// DOM node the browser was about to type into no longer existed by the time
+// the next paint happened. Hoisting Shell out fixes it: same function
+// reference every render, so React just re-renders its children in place.
+const Shell = ({
+  children,
+  footer,
+  attachments,
+}: {
+  children: ReactNode;
+  footer: ReactNode;
+  attachments: ReactNode;
+}) => (
+  <div className="rounded-[30px] border border-slate-200 bg-slate-50 p-3 shadow-[0_20px_70px_-36px_rgba(15,23,42,0.35)]">
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
+      {children}
+      {footer}
+      {attachments}
+    </div>
+  </div>
+);
 
 function TemplatePreviewCanvas({
   templateId,
@@ -403,37 +681,57 @@ function TemplatePreviewCanvas({
   activeBlockId,
   onSelectBlock,
   attachments = [],
-  onRemoveAttachment,
-  brandName,
+  onDownloadAttachment,
   interactive = true,
   onBlockTextChange,
   onEditorFocus,
-  onBlockSelectionChange,
+  onActivateBlock,
+  onSelectionChange,
+  enableInlineImages = false,
+  onToggleSectionRemoved,
+  onRestoreImageSlot,
+  boxRefs
 }: {
   templateId?: number;
   blocks: TemplateLayoutBlock[];
   activeBlockId?: string | null;
   onSelectBlock?: (blockId: string) => void;
   attachments?: ComposerAttachment[];
-  onRemoveAttachment?: (attachment: ComposerAttachment) => void;
-  brandName?: string;
+  onDownloadAttachment?: (attachment: ComposerAttachment) => void;
   // When false (used inside the "Preview" reading pane), text renders as
   // plain read-only HTML instead of live Quill instances, and image slots
   // aren't clickable.
   interactive?: boolean;
   onBlockTextChange?: (blockId: string, value: string) => void;
-  onEditorFocus?: (blockId: string, handle: RichTextEditorHandle) => void;
-  onBlockSelectionChange?: (text: string) => void;
+  onEditorFocus?: (blockId: string, handle: ComposerEditorHandle) => void;
+  onActivateBlock?: (blockId: string) => void; // For text block activation (separate from image slot selection)
+  onSelectionChange?: (blockId: string, handle: ComposerEditorHandle, selectedText: string) => void;
+  enableInlineImages?: boolean;
+  onToggleSectionRemoved?: (blockId: string) => void;
+  onRestoreImageSlot?: (blockId: string) => void;
+  boxRefs?: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
 }) {
-  const headline = blocks.find((block) => block.role === "headline")?.text || "Add your headline";
   const bodyBlocks = blocks.filter((block) => block.role === "body");
-  const footer = blocks.find((block) => block.role === "footer")?.text || "Add your footer";
   const imageBlocks = blocks.filter((block) => block.role === "image");
 
   const renderInteractiveText = (blockId: string | undefined, content: ReactNode, className = "w-full text-left") => {
     if (!blockId || !interactive) return <div className={className}>{content}</div>;
 
+    const block = blocks.find((b) => b.id === blockId);
     const isActive = activeBlockId === blockId;
+
+    // If this is a removed image slot, clicking should restore it
+    if (block?.role === "image" && block.removed) {
+      return (
+        <button
+          type="button"
+          onClick={() => onRestoreImageSlot?.(blockId)}
+          className={`block w-full cursor-pointer text-left ${className}`}
+        >
+          {content}
+        </button>
+      );
+    }
 
     return (
       <button
@@ -446,78 +744,148 @@ function TemplatePreviewCanvas({
     );
   };
 
-  const renderImage = (block: TemplateLayoutBlock, className = "w-full h-full object-cover") => {
+
+  // Requirement #1: in read-only mode (the actual send preview), a removed
+  // slot disappears completely -- container and all -- instead of showing
+  // the "click to add back" placeholder, which only makes sense while
+  // actively editing.
+  const shouldRenderSlot = (block?: TemplateLayoutBlock) => interactive || !block?.removed;
+
+  const renderImageSlot = (
+    block: TemplateLayoutBlock | undefined,
+    containerClassName: string,
+    imgClassName = "h-full w-full",
+    
+  ) => {
+    if (!block || !shouldRenderSlot(block)) return null;
+    return (
+        <div
+          className={containerClassName}
+          ref={(el) => { if (block?.id && boxRefs) boxRefs.current[block.id] = el; }}
+        >
+        {renderInteractiveText(block?.id, renderImage(block, imgClassName), "w-full h-full")}
+      </div>
+    );
+  };
+
+  // Requirement #5: a fixed template's image slot can be removed from the
+  // preview for this send (without deleting it from the layout definition,
+  // so it can be added back) -- see `removeImageSlot`/`restoreImageSlot`
+  // wired in from ComposeStep.
+  const renderImage = (block: TemplateLayoutBlock, className = "w-full h-full object-cover ") => {
+    if (block?.removed) {
+      // Selecting is handled by the button wrapper renderInteractiveText
+      // already puts around this (interactive mode) -- this is just the
+      // visual placeholder. Restoring happens from the ImageSlotInput panel
+      // that opens once selected.
+      return (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-xs text-slate-400">
+          <span>Image slot removed</span>
+          <span className="font-medium text-blue-600">Click to add back</span>
+        </div>
+      );
+    }
+
     if (block?.imageUrl) {
       const widthValue = block.imageWidth && block.imageWidth.trim() ? block.imageWidth : "100%";
       const offsetValue = typeof block.imageOffsetX === "number" ? block.imageOffsetX : 0;
 
+      const img = (
+        <img
+          src={block.imageUrl}
+          alt={block.label}
+          className={`block h-full object-cover ${className}`}
+          style={{ objectFit: "cover", width: "100%", height: "100%", display: "block", objectPosition: "center 40%" }}
+        />
+      );
+
       return (
-        <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-2xl bg-slate-100">
+        <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-2xl">
           <div
             className="h-full overflow-hidden rounded-2xl"
             style={{ width: widthValue, maxWidth: "100%", transform: `translateX(${offsetValue}px)` }}
           >
-            <img
-              src={block.imageUrl}
-              alt={block.label}
-              className={`block h-full object-cover ${className}`}
-              style={{ objectFit: "cover", width: "100%", height: "100%", display: "block" }}
-            />
+            {/* Requirement #4: image slot can be made a link */}
+            {block.imageLinkUrl ? (
+              <a href={block.imageLinkUrl} target="_blank" rel="noopener noreferrer" onClick={(e) => interactive && e.preventDefault()}>
+                {img}
+              </a>
+            ) : (
+              img
+            )}
           </div>
         </div>
       );
     }
 
     return (
-      <div className="flex h-full w-full items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-100 text-sm text-slate-500">
+      <div className="flex h-full w-full items-center justify-center rounded-2xl border border-dashed border-slate-300 text-sm text-slate-500">
         Add an image
       </div>
     );
   };
 
-  const renderRichText = (content?: string, className = "text-sm leading-6 text-slate-600") => {
-    const safeContent = normalizeRichTextContent(content?.trim() || "");
-    return <div className={`${className} ${RICH_TEXT_DISPLAY_CLASS}`} dangerouslySetInnerHTML={{ __html: safeContent }} />;
+  const renderRichText = (content?: string | null, className = "text-sm leading-6 text-slate-600") => {
+    const safeContent = normalizeRichTextContent(content);
+    return <div className={`${className} ${RICH_TEXT_DISPLAY_CLASS}`} style={{ whiteSpace: "pre-wrap" }} dangerouslySetInnerHTML={{ __html: safeContent }} />;
   };
 
-  // Text blocks (headline/body/footer) are edited directly in place — no more
-  // "click to open a side panel". `bare` strips Quill's default box chrome so
-  // it blends into the template layout; a focus ring shows which block is
-  // currently being edited. In non-interactive (read-only preview) mode it
-  // just renders the HTML.
+  // Text blocks (headline/body/footer) are edited directly in place.
+  // The actual contentEditable + DOM-sync logic lives in EditableTextBlock
+  // (module scope, above) -- see the comment there for why it has to be a
+  // real component with its own stable ref, not inline JSX built here.
   const renderEditableText = (
     block: TemplateLayoutBlock | undefined,
     className: string,
-    placeholder?: string
+    placeholder?: string,
+    onSelectionChange?: (blockId: string, handle: ComposerEditorHandle, selectedText: string) => void,
+    onActivateBlock?: (blockId: string) => void
   ) => {
     if (!block) return <p className={className}>{placeholder}</p>;
+
+    if (block.removed) {
+      if (!interactive) return null; // gone entirely from the real send preview
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            onToggleSectionRemoved?.(block.id);
+            // After restoring, also activate this block so it gets focus
+            onActivateBlock?.(block.id);
+          }}
+          className="flex w-full flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-xs text-slate-400"
+        >
+          <span>{block.label} removed</span>
+          <span className="font-medium text-blue-600">Click to add back</span>
+        </button>
+      );
+    }
 
     if (!interactive) {
       return renderRichText(block.text || block.placeholder, className);
     }
 
-    const isActive = activeBlockId === block.id;
-
     return (
-      <div className={`rounded-xl transition-shadow ${isActive ? "ring-2 ring-blue-400 ring-offset-1" : "hover:ring-1 hover:ring-slate-200"}`}>
-        <RichTextEditor
-          bare
-          value={block.text}
-          placeholder={block.placeholder || placeholder}
-          className={className}
-          onChange={(value) => onBlockTextChange?.(block.id, value)}
-          onEditorReady={(handle) => onEditorFocus?.(block.id, handle)}
-          onSelectionChange={(text) => onBlockSelectionChange?.(text)}
-        />
-      </div>
+      <EditableTextBlock
+        key={block.id}
+        block={block}
+        className={className}
+        placeholder={placeholder}
+        isActive={activeBlockId === block.id}
+        onBlockTextChange={onBlockTextChange}
+        onEditorFocus={onEditorFocus}
+        onActivateBlock={onActivateBlock}
+        onSelectionChange={onSelectionChange}
+        enableImages={enableInlineImages}
+      />
     );
   };
 
-  const renderBodyParagraphs = () => (
+  const renderBodyParagraphs = (onSelectionChange?: (blockId: string, handle: ComposerEditorHandle, selectedText: string) => void) => (
     <div className="space-y-3">
       {bodyBlocks.length > 0 ? bodyBlocks.map((block) => (
         <div key={block.id}>
-          {renderEditableText(block, "text-sm leading-6 text-slate-600 text-center")}
+          {renderEditableText(block, "text-sm leading-6 text-slate-600 text-center", undefined, onSelectionChange, onActivateBlock)}
         </div>
       )) : (
         <p className="text-sm leading-6 text-slate-600 text-center">Add your supporting text</p>
@@ -525,29 +893,23 @@ function TemplatePreviewCanvas({
     </div>
   );
 
-  // Mirrors the real send: a quiet centered brand wordmark with a hairline
-  // rule underneath, not app-UI chrome.
-  const renderBrandHeader = () => (
-    <div className="border-b border-slate-100 px-6 py-4 text-center">
-      <span className="text-base font-bold text-blue-700">{brandName || "Your brand"}</span>
-    </div>
-  );
-
-  const renderHeadline = () => (
+  const renderHeadline = (onSelectionChange?: (blockId: string, handle: ComposerEditorHandle, selectedText: string) => void) => (
     <div className="mt-6">
       {renderEditableText(
         blocks.find((block) => block.role === "headline"),
         "text-2xl font-bold leading-snug text-slate-900 text-center",
-        "Add your headline"
+        "Add your headline",
+        onSelectionChange,
+        onActivateBlock
       )}
     </div>
   );
 
   // Footer is disclaimer/contact copy, not a call-to-action — keep it quiet
   // and small like a real unsubscribe/copyright line, not a blue button.
-  const renderFooterBar = () => (
+  const renderFooterBar = (onSelectionChange?: (blockId: string, handle: ComposerEditorHandle, selectedText: string) => void) => (
     <div className="mt-6 border-t border-slate-100 bg-slate-50 px-6 py-4 text-center">
-      {renderEditableText(blocks.find((block) => block.role === "footer"), "text-xs leading-5 text-slate-400 text-center", "Add your footer")}
+      {renderEditableText(blocks.find((block) => block.role === "footer"), "text-xs leading-5 text-slate-400 text-center", "Add your footer", onSelectionChange, onActivateBlock)}
     </div>
   );
 
@@ -568,13 +930,13 @@ function TemplatePreviewCanvas({
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
-                onRemoveAttachment?.(attachment);
+                onDownloadAttachment?.(attachment);
               }}
               className="inline-flex max-w-40 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-100"
             >
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-50 text-[10px] font-semibold text-blue-600">📎</span>
               <span className="truncate">{attachment.name}</span>
-              <span className="ml-1 text-[11px] text-slate-400">✕</span>
+              <span className="ml-1 text-[11px] text-slate-400">⬇</span>
             </button>
           ))}
           {attachments.length > 4 && (
@@ -587,31 +949,16 @@ function TemplatePreviewCanvas({
     );
   };
 
-  // Shared outer shell: light neutral mounting frame + a white "email card"
-  // with a real brand header and a quiet disclaimer footer, instead of the
-  // dark UI-chrome toolbar that was identical across every template.
-  const Shell = ({ children }: { children: ReactNode }) => (
-    <div className="rounded-[30px] border border-slate-200 bg-slate-50 p-3 shadow-[0_20px_70px_-36px_rgba(15,23,42,0.35)]">
-      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
-        {children}
-        {renderFooterBar()}
-        {renderAttachmentSection()}
-      </div>
-    </div>
-  );
-
   switch (templateId) {
     // Hero banner — full-bleed image up top, like a real hero email header,
     // then headline/body/CTA copy underneath.
     case 1:
       return (
-        <Shell>
-          <div className="h-56 overflow-hidden bg-slate-100 sm:h-64">
-            {renderInteractiveText(imageBlocks[0]?.id, renderImage(imageBlocks[0], "h-full w-full"), "w-full h-full")}
-          </div>
+        <Shell footer={renderFooterBar(onSelectionChange)} attachments={renderAttachmentSection()}>
+          {renderImageSlot(imageBlocks[0], "h-56 overflow-hidden sm:h-64")}
           <div className="px-6 pb-2">
-            {renderHeadline()}
-            <div className="mt-4">{renderBodyParagraphs()}</div>
+            {renderHeadline(onSelectionChange)}
+            <div className="mt-4">{renderBodyParagraphs(onSelectionChange)}</div>
           </div>
         </Shell>
       );
@@ -620,13 +967,11 @@ function TemplatePreviewCanvas({
     // portrait image (people/product shots), not a wide banner.
     case 2:
       return (
-        <Shell>
+        <Shell footer={renderFooterBar(onSelectionChange)} attachments={renderAttachmentSection()}>
           <div className="px-6 pb-2">
-            {renderHeadline()}
-            <div className="mt-4">{renderBodyParagraphs()}</div>
-            <div className="mx-auto mt-6 h-64 w-48 overflow-hidden rounded-2xl bg-slate-100">
-              {renderInteractiveText(imageBlocks[0]?.id, renderImage(imageBlocks[0], "h-full w-full"), "w-full h-full")}
-            </div>
+            {renderHeadline(onSelectionChange)}
+            <div className="mt-4">{renderBodyParagraphs(onSelectionChange)}</div>
+            {renderImageSlot(imageBlocks[0], "h-56 overflow-hidden sm:h-64")}
           </div>
         </Shell>
       );
@@ -634,17 +979,28 @@ function TemplatePreviewCanvas({
     // Split image — headline and copy, then two images side by side.
     case 3:
       return (
-        <Shell>
+        <Shell footer={renderFooterBar(onSelectionChange)} attachments={renderAttachmentSection()}>
           <div className="px-6 pb-2">
-            {renderHeadline()}
-            <div className="mt-4">{renderBodyParagraphs()}</div>
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <div className="h-36 overflow-hidden rounded-2xl bg-slate-100">
-                {renderInteractiveText(imageBlocks[0]?.id, renderImage(imageBlocks[0], "h-full w-full"), "w-full h-full")}
-              </div>
-              <div className="h-36 overflow-hidden rounded-2xl bg-slate-100">
-                {renderInteractiveText(imageBlocks[1]?.id, renderImage(imageBlocks[1], "h-full w-full"), "w-full h-full")}
-              </div>
+            {renderHeadline(onSelectionChange)}
+            <div className="mt-4">{renderBodyParagraphs(onSelectionChange)}</div>
+            <div className="mt-6">
+              {(() => {
+                const visibleImages = imageBlocks.filter(block => !block.removed);
+                if (visibleImages.length === 0) return null;
+                if (visibleImages.length === 1) {
+                  return (
+                    <div className="flex justify-center">
+                      {renderImageSlot(visibleImages[0], "h-36 overflow-hidden sm:h-44 max-w-sm")}
+                    </div>
+                  );
+                }
+                return (
+                  <div className="grid grid-cols-2 gap-3">
+                    {renderImageSlot(imageBlocks[0], "h-36 overflow-hidden sm:h-44")}
+                    {renderImageSlot(imageBlocks[1], "h-36 overflow-hidden sm:h-44")}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </Shell>
@@ -654,18 +1010,37 @@ function TemplatePreviewCanvas({
     // (a bordered/shadowed thumbnail reads as a card, a plain grey box doesn't).
     case 4:
       return (
-        <Shell>
+        <Shell footer={renderFooterBar(onSelectionChange)} attachments={renderAttachmentSection()}>
           <div className="px-6 pb-2">
-            {renderHeadline()}
-            <div className="mt-4">{renderBodyParagraphs()}</div>
-            <div className="mt-6 grid grid-cols-3 gap-2.5">
-              {[0, 1, 2].map((index) => (
-                <div key={imageBlocks[index]?.id || index} className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
-                  <div className="h-24 overflow-hidden rounded-xl bg-slate-100">
-                    {renderInteractiveText(imageBlocks[index]?.id, renderImage(imageBlocks[index], "h-full w-full"), "w-full h-full")}
+            {renderHeadline(onSelectionChange)}
+            <div className="mt-4">{renderBodyParagraphs(onSelectionChange)}</div>
+            <div className="mt-6">
+              {(() => {
+                const visibleImages = imageBlocks.filter(block => !block.removed);
+                if (visibleImages.length === 0) return null;
+                if (visibleImages.length === 1) {
+                  return (
+                    <div className="flex justify-center">
+                      {renderImageSlot(visibleImages[0], "rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm h-36 overflow-hidden sm:h-36 max-w-sm")}
+                    </div>
+                  );
+                }
+                if (visibleImages.length === 2) {
+                  return (
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {renderImageSlot(imageBlocks[0], "rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm h-36 overflow-hidden sm:h-36")}
+                      {renderImageSlot(imageBlocks[1], "rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm h-36 overflow-hidden sm:h-36")}
+                    </div>
+                  );
+                }
+                return (
+                  <div className="grid grid-cols-3 gap-2.5">
+                      {renderImageSlot(imageBlocks[0], "rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm h-36 overflow-hidden sm:h-36")}
+                      {renderImageSlot(imageBlocks[1], "rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm h-36 overflow-hidden sm:h-36")}
+                      {renderImageSlot(imageBlocks[2], "rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm h-36 overflow-hidden sm:h-36")}
                   </div>
-                </div>
-              ))}
+                );
+              })()}
             </div>
           </div>
         </Shell>
@@ -675,17 +1050,15 @@ function TemplatePreviewCanvas({
     // paragraph. Mirrors the actual AI-generated sample: text / image / text.
     case 5:
       return (
-        <Shell>
+        <Shell footer={renderFooterBar(onSelectionChange)} attachments={renderAttachmentSection()}>
           <div className="px-6 pb-2">
-            {renderHeadline()}
+            {renderHeadline(onSelectionChange)}
             <div className="mt-4">
-              {renderEditableText(bodyBlocks[0], "text-sm leading-6 text-slate-600 text-center")}
+              {renderEditableText(bodyBlocks[0], "text-sm leading-6 text-slate-600 text-center", undefined, onSelectionChange, onActivateBlock)}
             </div>
-            <div className="mt-5 h-44 overflow-hidden rounded-2xl bg-slate-100">
-              {renderInteractiveText(imageBlocks[0]?.id, renderImage(imageBlocks[0], "h-full w-full"), "w-full h-full")}
-            </div>
+            {renderImageSlot(imageBlocks[0], "mt-5 h-44 overflow-hidden rounded-2xl", "h-full w-full")}
             <div className="mt-5">
-              {renderEditableText(bodyBlocks[1], "text-sm leading-6 text-slate-600 text-center")}
+              {renderEditableText(bodyBlocks[1], "text-sm leading-6 text-slate-600 text-center", undefined, onSelectionChange, onActivateBlock)}
             </div>
           </div>
         </Shell>
@@ -693,403 +1066,94 @@ function TemplatePreviewCanvas({
 
     default:
       return (
-        <Shell>
+        <Shell footer={renderFooterBar(onSelectionChange)} attachments={renderAttachmentSection()}>
           <div className="px-6 pb-2">
-            {renderHeadline()}
-            <div className="mt-4">{renderBodyParagraphs()}</div>
-            <div className="mt-6 h-44 overflow-hidden rounded-2xl bg-slate-100">
-              {renderInteractiveText(imageBlocks[0]?.id, renderImage(imageBlocks[0], "h-full w-full"), "w-full h-full")}
-            </div>
+            {renderHeadline(onSelectionChange)}
+            <div className="mt-4">{renderBodyParagraphs(onSelectionChange)}</div>
+            {renderImageSlot(imageBlocks[0], "mt-6 h-44 overflow-hidden rounded-2xl")}
           </div>
         </Shell>
       );
   }
 }
 
+// Formatting toolbar (bold/italic/underline/strike, alignment, lists, color,
+// link, clear) now lives in ./composer-tiptap/ComposerToolbar and drives
+// whichever ComposerRichTextEditor instance is currently focused directly
+// via its handle -- see activeEditorHandle in ComposeStep below. The old
+// CustomToolbar (blockId + execCommand-format-name dispatch) is gone along
+// with handleFormatText, since TipTap owns formatting state/commands itself.
 
-// A stable, reusable Quill editor. Always renders as Quill (it handles HTML
-// content natively) rather than switching between Quill and a bare
-// contentEditable div depending on whether the value "looks like HTML" —
-// that switch was swapping the underlying DOM node out from under the user
-// mid-typing, which is what was causing the caret/focus loss.
-//
-// Quill's own built-in toolbar is disabled entirely (`toolbar: false`).
-// Formatting instead goes through <CustomToolbar>, a plain React-controlled
-// panel that calls the Quill API (`editor.format(...)`) directly on whichever
-// editor is currently focused. Quill's built-in toolbar picks (the dropdowns
-// for header/size/color) work by injecting their own DOM nodes into a
-// container Quill assumes it owns — every time React re-rendered that
-// container (which happens on every keystroke here), React and Quill fought
-// over the same DOM nodes and the pickers silently stopped responding. Custom
-// buttons that call the documented API sidestep that entirely.
-function RichTextEditor({
-  value,
-  onChange,
-  placeholder,
-  className,
-  onEditorReady,
-  onSelectionChange,
-  bare,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
+// ─── Draggable Component ──────────────────────────────────────────────────────────
+
+function Draggable({ children, initialPosition = { x: 0, y: 0 }, className = "" }: {
+  children: React.ReactNode;
+  initialPosition?: { x: number; y: number };
   className?: string;
-  onEditorReady?: (editor: RichTextEditorHandle) => void;
-  onSelectionChange?: (value: string) => void;
-  // Strips Quill's default bordered box so the editor blends into a layout
-  // (e.g. inline in a template preview) instead of looking like a form field.
-  bare?: boolean;
 }) {
-  const quillRef = useRef<any>(null);
-  // Quill only remembers a selection/cursor position across a blur+refocus
-  // cycle for as long as *it* thinks the page focus moved somewhere mundane.
-  // A native <input type="color"> picker is a full OS-level overlay, and on
-  // some browsers that clears Quill's own remembered range entirely. Once
-  // that range is gone, `editor.format(name, value)` on a collapsed cursor
-  // silently does nothing (there's nothing to attach the "pending format for
-  // the next typed character" to) — which is exactly why color/background
-  // only ever seemed to work when text was already highlighted (a real
-  // visible selection survives the round trip; a bare cursor doesn't). We
-  // track the last selection ourselves, independent of Quill's internal
-  // bookkeeping, and restore it explicitly before formatting.
-  const lastRangeRef = useRef<{ index: number; length: number } | null>(null);
+  const [position, setPosition] = useState(initialPosition);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<HTMLDivElement>(null);
+  const offsetRef = useRef({ x: 0, y: 0 });
 
-  const buildHandle = (editor: any): RichTextEditorHandle => ({
-    replaceSelection: (nextText: string) => {
-      editor.focus();
-      const selection = editor.getSelection() || { index: editor.getLength(), length: 0 };
-      if (selection.length > 0) {
-        editor.deleteText(selection.index, selection.length, "user");
-      }
-      editor.insertText(selection.index, nextText, "user");
-      editor.setSelection(selection.index + nextText.length, 0, "user");
-    },
-    insertImage: (url: string) => {
-      editor.focus();
-      const selection = editor.getSelection() || { index: editor.getLength(), length: 0 };
-      editor.insertEmbed(selection.index, "image", url, "user");
-      editor.setSelection(selection.index + 1, 0, "user");
-    },
-    getHtml: () => editor.root.innerHTML,
-    focus: () => editor.focus(),
-    // Mirrors what Quill's own toolbar module does internally: focus() first
-    // (this restores the last-known selection even if the editor is
-    // currently blurred — e.g. because the user just clicked a sidebar
-    // button), *then* apply the format to that restored selection/caret.
-    applyFormat: (name: string, formatValue: unknown) => {
-      editor.focus();
-      // If Quill lost track of where the cursor/selection was (e.g. a
-      // native color picker just stole focus), restore it explicitly from
-      // our own record before formatting, instead of trusting whatever
-      // focus() happened to land on.
-      if (!editor.getSelection() && lastRangeRef.current) {
-        editor.setSelection(lastRangeRef.current.index, lastRangeRef.current.length, "silent");
-      }
-      editor.format(name, formatValue, "user");
-    },
-    getFormats: () => {
-      editor.focus();
-      const selection = editor.getSelection() || lastRangeRef.current;
-      if (!selection) return {};
-      return editor.getFormat(selection.index, selection.length) || {};
-    },
-    clearFormatting: () => {
-      editor.focus();
-      const selection = editor.getSelection();
-      if (selection && selection.length > 0) {
-        editor.removeFormat(selection.index, selection.length, "user");
-      }
-    },
-    // Swaps an existing embedded image's src by mutating the live DOM node
-    // directly, then asking Quill to resync (`editor.update`) rather than
-    // re-parsing a hand-built HTML string back through the controlled
-    // `value` prop — round-tripping through DOMParser/innerHTML could
-    // produce markup that doesn't parse back to an identical Delta, which is
-    // what was causing this to hang.
-    replaceImageSrc: (oldSrc: string, newSrc: string) => {
-      const images: HTMLImageElement[] = Array.from(editor.root.querySelectorAll("img"));
-      const image = images.find((candidate) => candidate.getAttribute("src") === oldSrc);
-      if (image) {
-        image.setAttribute("src", newSrc);
-        editor.update("user");
-      }
-    },
-    // The blank template's images are plain <img> embeds inside the Quill
-    // delta — there's no TemplateLayoutBlock to hang width/offset state off
-    // of like the preset templates have. So width and horizontal offset are
-    // read from and written directly onto the live <img> node's own inline
-    // style, mirroring the replaceImageSrc approach above (mutate the DOM
-    // node, then editor.update("user") to resync Quill's model).
-    getImageStyle: (src: string) => {
-      const images: HTMLImageElement[] = Array.from(editor.root.querySelectorAll("img"));
-      const image = images.find((candidate) => candidate.getAttribute("src") === src);
-      if (!image) return { width: 100, offsetX: 0 };
-      const widthAttr = image.style.width;
-      const width = widthAttr && widthAttr.endsWith("%") ? Number.parseInt(widthAttr, 10) || 100 : 100;
-      const offsetMatch = /translateX\((-?\d+(?:\.\d+)?)px\)/.exec(image.style.transform || "");
-      const offsetX = offsetMatch ? Number.parseFloat(offsetMatch[1]) : 0;
-      return { width, offsetX };
-    },
-    updateImageStyle: (src: string, updates: { width?: number; offsetX?: number }) => {
-      const images: HTMLImageElement[] = Array.from(editor.root.querySelectorAll("img"));
-      const image = images.find((candidate) => candidate.getAttribute("src") === src);
-      if (!image) return;
-      if (typeof updates.width === "number") {
-        image.style.width = `${updates.width}%`;
-        image.style.height = "auto";
-        image.style.maxWidth = "100%";
-        image.style.display = "block";
-      }
-      if (typeof updates.offsetX === "number") {
-        image.style.transform = updates.offsetX ? `translateX(${updates.offsetX}px)` : "";
-      }
-      editor.update("user");
-    },
-  });
+  const handleMouseDown = (e: React.MouseEvent<HTMLElement>) => {
+    if (!dragRef.current) return;
+    
+    const rect = dragRef.current.getBoundingClientRect();
+    offsetRef.current = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
+    
+    setIsDragging(true);
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: globalThis.MouseEvent) => {
+      if (!isDragging) return;
+      
+      const parentRect = dragRef.current?.parentElement?.getBoundingClientRect();
+      if (!parentRect) return;
+      
+      const newX = e.clientX - parentRect.left - offsetRef.current.x;
+      const newY = e.clientY - parentRect.top - offsetRef.current.y;
+      
+      setPosition({
+        x: Math.max(0, newX),
+        y: Math.max(0, newY),
+      });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
 
   return (
-    <div className={`${className || ""} ${bare ? "composer-editor-bare" : ""}`}>
-      {bare && (
-        // Quill hardcodes its own font-size/padding/border on .ql-editor,
-        // which would otherwise fight the surrounding Tailwind typography
-        // classes (e.g. a headline's text-2xl font-bold) and make every
-        // inline-editable block look like plain default Quill text. This
-        // makes it inherit typography from its wrapping element instead.
-        <style>{`
-          .composer-editor-bare .ql-container { border: none !important; }
-          .composer-editor-bare .ql-editor {
-            padding: 0 !important;
-            font-size: inherit !important;
-            line-height: inherit !important;
-            font-weight: inherit !important;
-            font-family: inherit !important;
-            color: inherit !important;
-            text-align: inherit !important;
-          }
-          .composer-editor-bare .ql-editor.ql-blank::before {
-            font-style: normal;
-            color: #94a3b8;
-            left: 0;
-            right: 0;
-          }
-        `}</style>
-      )}
-      <ReactQuill
-        ref={quillRef}
-        theme="snow"
-        value={value}
-        onChange={onChange}
-        onFocus={() => {
-          const editor = quillRef.current?.getEditor?.();
-          if (editor && onEditorReady) {
-            onEditorReady(buildHandle(editor));
-          }
-        }}
-        onChangeSelection={(range, _source, editor) => {
-          if (range) {
-            lastRangeRef.current = { index: range.index, length: range.length };
-          }
-          if (onSelectionChange) {
-            if (range && range.length > 0) {
-              onSelectionChange(editor.getText(range.index, range.length).trim());
-            } else {
-              onSelectionChange("");
-            }
-          }
-        }}
-        placeholder={placeholder}
-        modules={{ toolbar: false }}
-        formats={["header", "size", "bold", "italic", "underline", "strike", "list", "link", "color", "background", "blockquote", "align", "image"]}
-      />
-    </div>
-  );
-}
-
-type RichTextEditorHandle = {
-  replaceSelection: (nextText: string) => void;
-  insertImage: (url: string) => void;
-  replaceImageSrc: (oldSrc: string, newSrc: string) => void;
-  getHtml: () => string;
-  getImageStyle: (src: string) => { width: number; offsetX: number };
-  updateImageStyle: (src: string, updates: { width?: number; offsetX?: number }) => void;
-  focus: () => void;
-  applyFormat: (name: string, value: unknown) => void;
-  getFormats: () => Record<string, unknown>;
-  clearFormatting: () => void;
-};
-
-const HEADER_OPTIONS: { label: string; value: string }[] = [
-  { label: "Normal text", value: "" },
-  { label: "Heading 1", value: "1" },
-  { label: "Heading 2", value: "2" },
-  { label: "Heading 3", value: "3" },
-];
-
-const SIZE_OPTIONS: { label: string; value: string }[] = [
-  { label: "Small", value: "small" },
-  { label: "Normal size", value: "" },
-  { label: "Large", value: "large" },
-  { label: "Huge", value: "huge" },
-];
-
-// The formatting panel shown in the right column. Operates on whichever
-// editor handle is currently passed in (the most recently focused one) —
-// it doesn't own or render an editor itself.
-function CustomToolbar({ editor, disabled }: { editor: RichTextEditorHandle | null; disabled?: boolean }) {
-  const isDisabled = disabled || !editor;
-
-  const apply = (name: string, formatValue: unknown) => {
-    editor?.applyFormat(name, formatValue);
-  };
-
-  const toggle = (name: string) => {
-    if (!editor) return;
-    const current = editor.getFormats();
-    editor.applyFormat(name, !current[name]);
-  };
-
-  const toggleList = (type: "ordered" | "bullet") => {
-    if (!editor) return;
-    const current = editor.getFormats();
-    editor.applyFormat("list", current.list === type ? false : type);
-  };
-
-  // Prevents the browser from blurring the Quill editor (and collapsing its
-  // selection) the instant the mouse goes down on a toolbar control — the
-  // same trick Quill's own toolbar buttons use internally.
-  const preventBlur = (event: MouseEvent<HTMLElement>) => event.preventDefault();
-
-  const btn = "flex h-8 min-w-8 items-center justify-center rounded-lg border border-transparent px-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent";
-
-  return (
-    <div className={isDisabled ? "opacity-50" : undefined}>
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white p-2">
-          <select
-            disabled={isDisabled}
-            value=""
-            onChange={(event) => {
-              const raw = event.target.value;
-              apply("header", raw ? Number(raw) : false);
-            }}
-            className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-slate-700 disabled:cursor-not-allowed"
-          >
-            <option value="" disabled>
-              Format
-            </option>
-            {HEADER_OPTIONS.map((option) => (
-              <option key={option.label} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <select
-            disabled={isDisabled}
-            value=""
-            onChange={(event) => {
-              const raw = event.target.value;
-              apply("size", raw || false);
-            }}
-            className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-slate-700 disabled:cursor-not-allowed"
-          >
-            <option value="" disabled>
-              Size
-            </option>
-            {SIZE_OPTIONS.map((option) => (
-              <option key={option.label} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1 rounded-xl border border-gray-200 bg-white p-2">
-          <button type="button" disabled={isDisabled} onMouseDown={preventBlur} onClick={() => toggle("bold")} className={`${btn} font-bold`} title="Bold">
-            B
-          </button>
-          <button type="button" disabled={isDisabled} onMouseDown={preventBlur} onClick={() => toggle("italic")} className={`${btn} italic`} title="Italic">
-            I
-          </button>
-          <button type="button" disabled={isDisabled} onMouseDown={preventBlur} onClick={() => toggle("underline")} className={`${btn} underline`} title="Underline">
-            U
-          </button>
-          <button type="button" disabled={isDisabled} onMouseDown={preventBlur} onClick={() => toggle("strike")} className={`${btn} line-through`} title="Strikethrough">
-            S
-          </button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-gray-200 bg-white p-2">
-          <label className="flex items-center gap-1.5 text-xs text-slate-600">
-            Text
-            <input
-              type="color"
-              disabled={isDisabled}
-              onMouseDown={preventBlur}
-              onChange={(event) => apply("color", event.target.value)}
-              className="h-6 w-8 cursor-pointer rounded border border-gray-200 p-0 disabled:cursor-not-allowed"
-            />
-          </label>
-          <label className="flex items-center gap-1.5 text-xs text-slate-600">
-            Highlight
-            <input
-              type="color"
-              disabled={isDisabled}
-              onMouseDown={preventBlur}
-              onChange={(event) => apply("background", event.target.value)}
-              className="h-6 w-8 cursor-pointer rounded border border-gray-200 p-0 disabled:cursor-not-allowed"
-            />
-          </label>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1 rounded-xl border border-gray-200 bg-white p-2">
-          <button type="button" disabled={isDisabled} onMouseDown={preventBlur} onClick={() => apply("align", false)} className={btn} title="Align left">
-            ⯇
-          </button>
-          <button type="button" disabled={isDisabled} onMouseDown={preventBlur} onClick={() => apply("align", "center")} className={btn} title="Align center">
-            ≡
-          </button>
-          <button type="button" disabled={isDisabled} onMouseDown={preventBlur} onClick={() => apply("align", "right")} className={btn} title="Align right">
-            ⯈
-          </button>
-          <span className="mx-1 h-5 w-px bg-gray-200" />
-          <button type="button" disabled={isDisabled} onMouseDown={preventBlur} onClick={() => toggleList("bullet")} className={`${btn} text-xs`} title="Bulleted list">
-            • List
-          </button>
-          <button type="button" disabled={isDisabled} onMouseDown={preventBlur} onClick={() => toggleList("ordered")} className={`${btn} text-xs`} title="Numbered list">
-            1. List
-          </button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1 rounded-xl border border-gray-200 bg-white p-2">
-          <button
-            type="button"
-            disabled={isDisabled}
-            onMouseDown={preventBlur}
-            onClick={() => {
-              const url = window.prompt("Link URL");
-              if (url) apply("link", url);
-            }}
-            className={btn}
-            title="Insert link"
-          >
-            🔗
-          </button>
-          <button type="button" disabled={isDisabled} onMouseDown={preventBlur} onClick={() => toggle("blockquote")} className={btn} title="Quote">
-            ❝
-          </button>
-          <button
-            type="button"
-            disabled={isDisabled}
-            onMouseDown={preventBlur}
-            onClick={() => editor?.clearFormatting()}
-            className={btn}
-            title="Clear formatting"
-          >
-            ⨯
-          </button>
-        </div>
-      </div>
+    <div
+      ref={dragRef}
+      className={className}
+      style={{
+        position: 'absolute',
+        left: position.x,
+        top: position.y,
+        cursor: isDragging ? 'grabbing' : 'grab',
+        userSelect: 'none',
+      }}
+      onMouseDown={handleMouseDown}
+    >
+      {children}
     </div>
   );
 }
@@ -1103,7 +1167,6 @@ function AIWriterPopup({
   prompt,
   onPromptChange,
   onGenerate,
-  readOnly,
   isRewriting,
 }: {
   onClose: () => void;
@@ -1112,7 +1175,6 @@ function AIWriterPopup({
   prompt: string;
   onPromptChange: (value: string) => void;
   onGenerate: () => void;
-  readOnly?: boolean;
   isRewriting?: boolean;
 }) {
   const [writerOptions, setWriterOptions] = useState<LookupItem[]>([]);
@@ -1144,9 +1206,14 @@ function AIWriterPopup({
   }, []);
 
   return (
-    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-140 bg-white rounded-2xl shadow-2xl border border-gray-100 p-3 z-10">
-      <button onClick={onClose} className="absolute -top-2 -right-2 w-6 h-6 bg-white border border-gray-200 rounded-full text-gray-500 text-xs flex items-center justify-center hover:bg-gray-50">✕</button>
-      <div className="flex items-center gap-3">
+    <div
+      className="w-140 bg-white rounded-2xl shadow-2xl border border-gray-100 p-3 z-10"
+    >
+      <div className="flex items-center justify-between mb-3 cursor-move">
+        <span className="text-xs font-semibold text-gray-500">AI Writer (drag to move)</span>
+        <button onClick={onClose} className="w-6 h-6 bg-white border border-gray-200 rounded-full text-gray-500 text-xs flex items-center justify-center hover:bg-gray-50">✕</button>
+      </div>
+        <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 min-w-55">
           <select
             className="w-full bg-transparent text-sm font-medium text-gray-700 focus:outline-none"
@@ -1167,19 +1234,17 @@ function AIWriterPopup({
         </div>
         <input
           className="flex-1 text-sm text-gray-700 bg-transparent focus:outline-none placeholder-gray-400"
-          placeholder="Highlight parts of email to rewrite"
+          placeholder="Paste text to rewrite"
           value={prompt}
           onChange={e => onPromptChange(e.target.value)}
-          readOnly={readOnly}
         />
         <button
           onClick={onGenerate}
           disabled={isRewriting}
-          className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center hover:bg-blue-700 transition-colors disabled:opacity-60"
+          onMouseDown={(e) => e.preventDefault()} // Prevent focus stealing
+          className="w-8 h-8 bg-blue-200 rounded-full flex items-center justify-center hover:bg-blue-300 transition-colors disabled:opacity-60"
         >
-          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3l14 9-14 9V3z" />
-          </svg>
+         <img src={aiWriterBlue} className="h-5 w-5" alt="" />
         </button>
       </div>
     </div>
@@ -1193,6 +1258,8 @@ function ImageSlotInput({
   uploading,
   uploadError,
   onStyleChange,
+  onRemove,
+  onCommitCrop
 }: {
   block: TemplateLayoutBlock;
   onCommit: (value: string) => void;
@@ -1200,6 +1267,8 @@ function ImageSlotInput({
   uploading: boolean;
   uploadError: string;
   onStyleChange: (updates: Partial<TemplateLayoutBlock>) => void;
+  onRemove: () => void;
+  onCommitCrop?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1219,7 +1288,7 @@ function ImageSlotInput({
         spellCheck={false}
         inputMode="text"
         aria-label={block.placeholder || "Paste an image URL"}
-        className="relative z-30 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="relative w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         defaultValue={block.imageUrl || ""}
         onBlur={(event) => onCommit(event.currentTarget.value)}
         onMouseDown={(event) => event.stopPropagation()}
@@ -1252,6 +1321,8 @@ function ImageSlotInput({
             value={Number.parseInt(block.imageWidth?.replace(/%/, "") || "100", 10) || 100}
             onChange={(event) => onStyleChange({ imageWidth: `${event.target.value}%` })}
             className="w-full"
+            onPointerUp={onCommitCrop}
+            onTouchEnd={onCommitCrop}
           />
           <span className="mt-1 block text-slate-500">{block.imageWidth || "100%"}</span>
         </label>
@@ -1266,9 +1337,37 @@ function ImageSlotInput({
             value={block.imageOffsetX ?? 0}
             onChange={(event) => onStyleChange({ imageOffsetX: Number(event.target.value) })}
             className="w-full"
+            onPointerUp={onCommitCrop}
+            onTouchEnd={onCommitCrop}
           />
           <span className="mt-1 block text-slate-500">{block.imageOffsetX ?? 0}px</span>
         </label>
+      </div>
+
+      {/* Requirement #4: make this image slot a link */}
+      <label className="block text-xs font-medium text-slate-600">
+        <span className="mb-1 block">Link URL (optional)</span>
+        <input
+          type="text"
+          defaultValue={block.imageLinkUrl || ""}
+          onBlur={(event) => onStyleChange({ imageLinkUrl: event.currentTarget.value.trim() || undefined })}
+          placeholder="https://example.com"
+          className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </label>
+
+      {/* Requirement #5: remove/restore this image slot for this send */}
+      <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+        <span className="text-xs text-slate-500">
+          {block.removed ? "This image slot is hidden from the preview." : "Remove this image slot from the preview without deleting it."}
+        </span>
+        <button
+          type="button"
+          onClick={onRemove}
+          className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${block.removed ? "bg-blue-600 text-white hover:bg-blue-700" : "border border-red-200 text-red-600 hover:bg-red-50"}`}
+        >
+          {block.removed ? "Add image back" : "Remove image"}
+        </button>
       </div>
     </div>
   );
@@ -1283,6 +1382,7 @@ function EmailPreviewPane({
   attachments,
   templateId,
   templateLayout,
+  onDownloadAttachment,
 }: {
   form: ComposeForm;
   brandName: string;
@@ -1290,6 +1390,7 @@ function EmailPreviewPane({
   attachments: ComposerAttachment[];
   templateId?: number;
   templateLayout: TemplateLayoutBlock[];
+  onDownloadAttachment?: (attachment: ComposerAttachment) => void;
 }) {
   const senderName = brandName || form.name || "Your name";
   const senderEmail = form.from || "your@email.com";
@@ -1326,24 +1427,21 @@ function EmailPreviewPane({
           // freeform document, so the raw content is the whole story.
           <div
             className={`px-6 pb-6 text-[15px] leading-relaxed text-gray-800 ${RICH_TEXT_DISPLAY_CLASS}`}
-            style={{ fontFamily: "Arial, Helvetica, sans-serif" }}
+            style={{ fontFamily: "Arial, Helvetica, sans-serif", whiteSpace: "pre-wrap" }}
             dangerouslySetInnerHTML={{
-              __html: normalizeRichTextContent(form.body) || '<p style="color:#9CA3AF;">This email is empty.</p>',
+              __html: `<style>img{display:inline-block;vertical-align:middle;border-radius:8px;cursor:pointer;margin:0 4px;}</style>` + (normalizeRichTextContent(form.body) ?? '<p style="color:#9CA3AF;">This email is empty.</p>'),
             }}
           />
         ) : (
           // Preset templates have a specific visual arrangement (hero image,
-          // split images, cards, etc.) — reuse the same canvas that renders
-          // the live editor, just in non-interactive/read-only mode, so the
-          // preview actually matches what's on the left instead of just
-          // dumping flattened HTML.
+          // split images, cards, etc.) — use EmailTemplateSnapshot for
+          // consistent rendering with the drafts tab preview.
           <div className="px-6 pb-6">
-            <TemplatePreviewCanvas
+            <EmailTemplateSnapshot
               templateId={templateId}
               blocks={templateLayout}
-              interactive={false}
-              attachments={[]}
-              brandName={brandName}
+              html={form.body}
+              attachmentCount={attachments.length}
             />
           </div>
         )}
@@ -1355,13 +1453,16 @@ function EmailPreviewPane({
             </p>
             <div className="flex flex-wrap gap-3">
               {attachments.map((attachment) => (
-                <div
+                <button
                   key={attachment.id}
-                  className="flex w-48 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700"
+                  type="button"
+                  onClick={() => onDownloadAttachment?.(attachment)}
+                  className="flex w-48 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 transition cursor-pointer"
                 >
                   <span className="flex h-8 w-8 items-center justify-center rounded border border-gray-200 bg-white text-xs">📎</span>
                   <span className="truncate">{attachment.name}</span>
-                </div>
+                  <span className="ml-auto text-xs text-blue-600">⬇</span>
+                </button>
               ))}
             </div>
           </div>
@@ -1371,10 +1472,12 @@ function EmailPreviewPane({
   );
 }
 
+// ─── Shared Editor Focus Handler ─────────────────────────────────────────────────────
+
 // ─── Compose Step ─────────────────────────────────────────────────────────────
 
 function ComposeStep({
-    form, onChange, onNext, brandId, templateId, templateLayout, onTemplateLayoutChange, onRegisterCleanup,
+    form, onChange, onNext, brandId, templateId, templateLayout, onTemplateLayoutChange, onRegisterCleanup, onSwitchToBlankTemplate, onSaveDraft, isAutoSaving, prefilled, categories: _categories, draftId,
   }: {
     form: ComposeForm;
     onChange: <K extends keyof ComposeForm>(k: K, v: ComposeForm[K]) => void;
@@ -1385,6 +1488,22 @@ function ComposeStep({
     templateLayout: TemplateLayoutBlock[];
     onTemplateLayoutChange: (value: TemplateLayoutBlock[]) => void;
     onRegisterCleanup?: (cleanup: () => Promise<void>) => void;
+    onSwitchToBlankTemplate?: () => void;
+    onSaveDraft?: () => Promise<void>;
+    isAutoSaving?: boolean;
+    prefilled?: {
+      subject?: string;
+      body?: string;
+      preview?: string;
+      aiResult?: Record<string, unknown>;
+      templateId?: number;
+      templateLayout?: any[];
+      attachments?: any[];
+      footer?: string;
+      address?: string;
+    };
+    categories?: { id: number; name: string }[];
+    draftId?: number;
   }) {
   const isBlankTemplate = !templateId || templateId === 0;
 
@@ -1396,9 +1515,14 @@ function ComposeStep({
   const [selectedSubjectSuggestion, setSelectedSubjectSuggestion] = useState("");
   const [showSubjectRewritePanel, setShowSubjectRewritePanel] = useState(false);
   const [isSubjectRewriting, setIsSubjectRewriting] = useState(false);
-  const [activeEditor, setActiveEditor] = useState<RichTextEditorHandle | null>(null);
-  const [activeSelectionText, setActiveSelectionText] = useState("");
-  const [pendingRewrite, setPendingRewrite] = useState<{ originalText: string; rewrittenText: string } | null>(null);
+  const [activeEditorHandle, setActiveEditorHandle] = useState<ComposerEditorHandle | null>(null);
+  const [rewrittenText, setRewrittenText] = useState<string | null>(null);
+  // Requirement #6: highlight text anywhere in the composer -> it flows into
+  // the AI Writer prompt -> "Approve" writes the rewrite back into exactly
+  // where it was highlighted, on whichever block it came from.
+  const aiWriterBridge = useAiWriterBridge();
+  const [replaceUnavailable, setReplaceUnavailable] = useState(false);
+  const blankBodyEditorRef = useRef<ComposerEditorHandle>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -1408,8 +1532,31 @@ function ComposeStep({
   const [pendingAttachments, setPendingAttachments] = useState<ComposerAttachment[]>([]);
   const [blankImageUrl, setBlankImageUrl] = useState("");
   const [selectedBlankImageSrc, setSelectedBlankImageSrc] = useState<string | null>(null);
-  const [blankImageWidth, setBlankImageWidth] = useState(100);
+
+  // Initialize local attachments from prefilled when loading drafts
+  useEffect(() => {
+    if (prefilled?.attachments && prefilled.attachments.length > 0) {
+      setAttachments(prefilled.attachments);
+    }
+  }, [prefilled?.attachments]);
+
+  // Sync local attachments state with compose.attachments for draft saving
+  useEffect(() => {
+    const allAttachments = [...attachments, ...pendingAttachments];
+    const currentAttachmentsStr = JSON.stringify(form.attachments);
+    const newAttachmentsStr = JSON.stringify(allAttachments);
+    if (currentAttachmentsStr !== newAttachmentsStr) {
+      onChange('attachments', allAttachments);
+    }
+  }, [attachments, pendingAttachments, form.attachments, onChange]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Size/position of whichever blank-template image is currently selected —
+  // mirrors block.imageWidth/imageOffsetX for the 5 fixed templates' image
+  // slots, just tracked in local state instead of on a layout block since a
+  // free-form image isn't a block.
+  const [blankImageWidth, setBlankImageWidth] = useState(DEFAULT_BLANK_IMAGE_WIDTH);
   const [blankImageOffsetX, setBlankImageOffsetX] = useState(0);
+  const [blankImageHeight, setBlankImageHeight] = useState<number | null>(null); // null = auto
+  const [blankImageHref, setBlankImageHref] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [isRewritingSelection, setIsRewritingSelection] = useState(false);
@@ -1418,10 +1565,33 @@ function ComposeStep({
   const [showAttachmentsPanel, setShowAttachmentsPanel] = useState(false);
 
   useEffect(() => {
-    if (selectedBlankImageSrc && form.body && !form.body.includes(selectedBlankImageSrc)) {
-      setSelectedBlankImageSrc(null);
-    }
+    if (!selectedBlankImageSrc || !form.body) return;
+    const container = document.createElement("div");
+    container.innerHTML = form.body;
+    const stillPresent = Array.from(container.querySelectorAll("img")).some(
+      (img) => img.getAttribute("src") === selectedBlankImageSrc
+    );
+    if (!stillPresent) setSelectedBlankImageSrc(null);
   }, [form.body, selectedBlankImageSrc]);
+
+  // Blank-body content sync (previously a hand-rolled effect diffing
+  // innerHTML against form.body, guarded by window.getSelection() checks to
+  // avoid stomping in-progress typing) is now handled generically inside
+  // ComposerRichTextEditor itself -- it only pushes `content` into the
+  // TipTap document when it's actually different from what's already there.
+
+  useEffect(() => {
+    setActiveBlockId(null);
+    setActiveEditorHandle(null);
+    // Don't reset AI writer when template changes - let user keep it open
+    // setShowAIWriter(false);
+    setWriterPrompt("");
+    setShowImagePanel(false);
+    setShowAttachmentsPanel(false);
+    // Don't reset selectedBlankImageSrc when toggling preview mode
+    // setSelectedBlankImageSrc(null);
+    setIsPreviewMode(false);
+  }, [templateId]);
 
   // Clicking an <img> inside the blank template's editor swaps the right-hand
   // panel over to image controls for that image instead of the formatting
@@ -1433,20 +1603,34 @@ function ComposeStep({
 
     const rawSrc = image?.getAttribute('src');
 
-    if (rawSrc) {
+    if (rawSrc && image) {
       const nextSrc = rawSrc;
-      if (selectedBlankImageSrc !== nextSrc || !showImagePanel) {
-        setSelectedBlankImageSrc(nextSrc);
-        setShowImagePanel(true);
-        const style = activeEditor?.getImageStyle(nextSrc) || { width: 100, offsetX: 0 };
-        setBlankImageWidth(style.width);
-        setBlankImageOffsetX(style.offsetX);
-      }
+
+      // Read this image's current width/offset off the live DOM so the
+      // sliders open already reflecting its actual size, not whatever the
+      // previously-selected image left behind.
+      const widthAttr = image.style.width;
+      const width = widthAttr && widthAttr.endsWith('%')
+        ? Number.parseInt(widthAttr, 10) || DEFAULT_BLANK_IMAGE_WIDTH
+        : DEFAULT_BLANK_IMAGE_WIDTH;
+      // % of the image's own width, not px -- see extensions.ts offsetX comment.
+      const offsetMatch = /translateX\((-?\d+(?:\.\d+)?)%\)/.exec(image.style.transform || "");
+      const offsetX = offsetMatch ? Number.parseFloat(offsetMatch[1]) : 0;
+      const heightAttr = image.style.height;
+      const height = heightAttr && heightAttr.endsWith("px") ? Number.parseInt(heightAttr, 10) : null;
+      const href = image.closest("a")?.getAttribute("href") || "";
+
+      setBlankImageWidth(width);
+      setBlankImageOffsetX(offsetX);
+      setBlankImageHeight(height);
+      setBlankImageHref(href);
+      setSelectedBlankImageSrc(nextSrc);
+      setShowImagePanel(true);
       return;
     }
 
-    // Do not reset state while interacting with the editor itself.
-    if (target.closest('.ql-editor')) {
+    // Do not reset state while interacting with the contentEditable editor
+    if (target.closest('[contenteditable]')) {
       return;
     }
 
@@ -1461,7 +1645,9 @@ function ComposeStep({
   const [brandFromEmail, setBrandFromEmail] = useState("");
 
   useEffect(() => {
+
     if (!brandId) {
+
       setBrandName("");
       setBrandInitial("B");
       setBrandFromEmail("");
@@ -1473,14 +1659,20 @@ function ComposeStep({
     const loadBrand = async () => {
       try {
         const brand = await brandService.getBrand(Number(brandId));
-        if (!isMounted || !brand) return;
+        if (!isMounted || !brand) {
+          return;
+        }
 
-        const nextName = brand.name || "";
-        const nextFromEmail = brand.fromEmail || "";
-        setBrandName(nextName);
-        setBrandInitial(getInitialLetter(nextName));
+
+        const brandData = brand as any; // Cast to access actual API fields
+        console.log('Fetched brands raw', brand);
+        const nextName = brandData.from_name || "";
+        const nextFromEmail = brandData.from_email || "";
+        setBrandName(nextName || "Your Brand"); // Use actual brand name
+        setBrandInitial(getInitialLetter(nextName || "B"));
         setBrandFromEmail(nextFromEmail);
 
+        // Update compose state with brand information
         if (nextName) {
           onChange("name", nextName);
         }
@@ -1499,18 +1691,7 @@ function ComposeStep({
     };
   }, [brandId]);
 
-  useEffect(() => {
-    setActiveBlockId(null);
-    setActiveEditor(null);
-    setShowAIWriter(false);
-    setPendingRewrite(null);
-    setActiveSelectionText("");
-    setWriterPrompt("");
-    setShowImagePanel(false);
-    setShowAttachmentsPanel(false);
-    setSelectedBlankImageSrc(null);
-    setIsPreviewMode(false);
-  }, [templateId]);
+  // Remove this duplicate useEffect - the templateId effect already handles this
 
   // Used only for image slots now — clicking an image slot selects it (and a
   // second click on the same slot deselects it). Text blocks are activated
@@ -1518,19 +1699,47 @@ function ComposeStep({
   const handleSelectImageBlock = (blockId: string) => {
     const nextBlockId = activeBlockId === blockId ? null : blockId;
     setActiveBlockId(nextBlockId);
-    setShowAIWriter(false);
-    setPendingRewrite(null);
-    setActiveSelectionText("");
+    // Don't close AI writer when selecting image blocks
+    // setShowAIWriter(false);
     setWriterPrompt("");
   };
+
+  // Handler for text block activation (doesn't clear selection state)
+  const handleActivateTextBlock = (blockId: string) => {
+    setActiveBlockId(blockId);
+    // Don't clear selection state for text blocks
+  };
+
 
   // Fired when any inline text block (headline/body/footer, or the blank
   // template's single document) gains focus — this is what drives which
   // editor the right-hand toolbar and the AI Writer act on.
-  const handleEditorFocus = (blockId: string, handle: RichTextEditorHandle) => {
+  const handleEditorFocus = (blockId: string, handle: ComposerEditorHandle) => {
     setActiveBlockId(blockId);
-    setActiveEditor(handle);
+    setActiveEditorHandle(handle);
   };
+
+  // Fired by any editable region's onSelectionChange -- feeds the AI Writer
+  // bridge so a highlight anywhere immediately becomes available to
+  // "rewrite," regardless of which block/editor instance it came from.
+  const handleEditorSelectionChange = useCallback(
+    (_blockId: string, handle: ComposerEditorHandle, selectedText: string) => {
+      if (selectedText) {
+        aiWriterBridge.captureSelection(handle, selectedText);
+        setWriterPrompt(selectedText);
+      }
+    },
+    [aiWriterBridge]
+  );
+
+  // Formatting now goes straight through ComposerToolbar -> activeEditorHandle
+  // (a ComposerEditorHandle backed by TipTap) rather than a blockId+format
+  // string dispatcher hand-rolling execCommand + DOM Range surgery. See
+  // ComposerToolbar's onClick handlers, which call e.g.
+  // activeEditorHandle.toggleBold() / .setAlign('center') / .setLink(url)
+  // directly on whichever block is focused.
+
+
 
   const handleRewriteSubject = async () => {
     if (!form.subject?.trim()) return;
@@ -1553,7 +1762,7 @@ function ComposeStep({
   };
 
   const handleRewriteSelection = async () => {
-    const textToRewrite = activeSelectionText || writerPrompt || form.preview || form.subject || form.body;
+    const textToRewrite = writerPrompt.trim();
     if (!textToRewrite) return;
 
     setIsRewritingSelection(true);
@@ -1564,7 +1773,8 @@ function ComposeStep({
       });
 
       if (response?.rewritten_text) {
-        setPendingRewrite({ originalText: textToRewrite, rewrittenText: response.rewritten_text });
+        // Show the rewritten text in a popup
+        setRewrittenText(response.rewritten_text);
       }
     } catch (error) {
       console.error("Partial rewrite failed:", error);
@@ -1573,14 +1783,40 @@ function ComposeStep({
     }
   };
 
-  const handleApproveRewrite = () => {
-    if (!pendingRewrite || !activeEditor) return;
+  const handleCopyRewrittenText = () => {
+    if (rewrittenText) {
+      navigator.clipboard.writeText(rewrittenText);
+    }
+  };
 
-    activeEditor.replaceSelection(pendingRewrite.rewrittenText);
+  const handleDownloadAttachment = async (attachment: ComposerAttachment) => {
+    try {
+      const response = await fetch(attachment.url, { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(`Download failed with status ${response.status}`);
+      }
 
-    setPendingRewrite(null);
-    setActiveSelectionText("");
-    setWriterPrompt("");
+      const blob = await response.blob();
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = attachment.name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.error('Attachment download failed', error);
+      // Fallback: open in new tab
+      const fallbackLink = document.createElement('a');
+      fallbackLink.href = attachment.url;
+      fallbackLink.download = attachment.name;
+      fallbackLink.target = '_blank';
+      fallbackLink.rel = 'noopener noreferrer';
+      document.body.appendChild(fallbackLink);
+      fallbackLink.click();
+      fallbackLink.remove();
+    }
   };
 
   const handleOpenAttachment = async (attachment: ComposerAttachment) => {
@@ -1594,7 +1830,7 @@ function ComposeStep({
       const objectUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = objectUrl;
-      link.download = attachment.name;
+      link.download   = attachment.name;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -1625,13 +1861,13 @@ function ComposeStep({
     setUploadError("");
 
     try {
-      const { url } = await uploadAsset(file, 'images', brandId ? Number(brandId) : undefined, (percent) => setUploadProgress(percent));
+      const { url } = await uploadAsset(file, 'images', brandId ? Number(brandId) : undefined, draftId, (percent) => setUploadProgress(percent));
       if (activeBlockId) {
         const activeBlock = templateLayout.find((item) => item.id === activeBlockId);
         if (activeBlock?.role === 'image') {
           const nextBlocks = templateLayout.map((item) => item.id === activeBlock.id ? { ...item, imageUrl: url } : item);
           onTemplateLayoutChange(nextBlocks);
-          onChange('body', buildLayoutHtml(nextBlocks));
+          onChange('body', buildLayoutHtml(nextBlocks, templateId));
         }
       }
       if (fileInputRef.current) {
@@ -1648,31 +1884,47 @@ function ComposeStep({
     }
   };
 
-  // Blank template only: drops an image in as a real embed at wherever the
-  // cursor currently sits, so it can add as many images as the user wants,
-  // exactly where they're typing. If the editor was never focused yet, it
-  // falls back to appending — that's the only case where we touch form.body
-  // directly instead of going through Quill's own API.
+  // Blank template only: drops an image in as a real embed wherever the
+  // cursor currently sits (or at the end, if the editor never had focus
+  // yet). Goes through the TipTap handle's insertImage command -- a real
+  // document node insertion via a transaction, not a manual DOM
+  // createElement/insertNode -- so there's no risk of the DOM and React/
+  // TipPap's model disagreeing about what's actually in the document.
   const insertImageAtCursor = (url: string) => {
-    if (activeEditor) {
-      activeEditor.insertImage(url);
-      onChange('body', activeEditor.getHtml());
-      return;
-    }
-    const imgHtml = `<p><img src="${url}" alt="Inserted image" style="max-width:100%;height:auto;" /></p>`;
-    onChange('body', `${form.body || ''}${imgHtml}`);
+    const handle = getInlineImageTargetHandle();
+    if (!handle) return;
+    handle.insertImage(url);
+    // Update body HTML for both blank and fixed templates
+    onChange('body', handle.getHtml());
+    setBlankImageWidth(DEFAULT_BLANK_IMAGE_WIDTH);
+    setBlankImageOffsetX(0);
+    setBlankImageHeight(null);
+    setBlankImageHref("");
+    setSelectedBlankImageSrc(url);
   };
 
-  // Swaps an image the user clicked on for a new one. Goes through the
-  // editor's own DOM + Quill's resync (see replaceImageSrc), not a
-  // DOMParser/innerHTML round-trip — that round-trip was producing markup
-  // that didn't parse back to an identical Quill Delta, which is what made
-  // this hang.
+  // Swaps an image the user clicked on for a new one.
   const replaceSelectedBlankImageSrc = (newSrc: string) => {
-    if (!selectedBlankImageSrc || !activeEditor) return;
-    activeEditor.replaceImageSrc(selectedBlankImageSrc, newSrc);
-    onChange('body', activeEditor.getHtml());
+    const handle = getInlineImageTargetHandle();
+    if (!selectedBlankImageSrc || !handle) return;
+    handle.replaceImageSrc(selectedBlankImageSrc, newSrc);
+    onChange('body', handle.getHtml());
     setSelectedBlankImageSrc(newSrc);
+  };
+
+  // Resizes/repositions/(re)links whichever blank-template image is
+  // currently selected. Requirement #4 (image can be a link) is folded in
+  // here via `href` alongside the pre-existing width/offset controls.
+  const updateBlankImageStyle = (updates: { width?: number; height?: number | null; offsetX?: number; href?: string | null }) => {
+    const handle = getInlineImageTargetHandle();
+    if (!selectedBlankImageSrc || !handle) return;
+
+    handle.updateImageStyle(selectedBlankImageSrc, updates);
+    if (typeof updates.width === 'number') setBlankImageWidth(updates.width);
+    if (typeof updates.offsetX === 'number') setBlankImageOffsetX(updates.offsetX);
+    if (updates.height !== undefined) setBlankImageHeight(updates.height);
+    if (updates.href !== undefined) setBlankImageHref(updates.href || "");
+    onChange('body', handle.getHtml());
   };
 
   const handleBlankImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1686,13 +1938,17 @@ function ComposeStep({
     setUploadError("");
 
     try {
-      const { url } = await uploadAsset(file, 'images', brandId ? Number(brandId) : undefined, (percent) => setUploadProgress(percent));
+      const { url } = await uploadAsset(file, 'images', brandId ? Number(brandId) : undefined, draftId, (percent) => setUploadProgress(percent));
+      
       if (selectedBlankImageSrc) {
         replaceSelectedBlankImageSrc(url);
       } else {
         insertImageAtCursor(url);
       }
+      
+      // Set the URL in the input field
       setBlankImageUrl(url);
+      
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -1727,7 +1983,7 @@ function ComposeStep({
     setUploadError("");
 
     try {
-      const { url, filename, mimeType, assetId } = await uploadAsset(file, 'attachments', brandId ? Number(brandId) : undefined, (percent) => setUploadProgress(percent));
+      const { url, filename, mimeType, assetId } = await uploadAsset(file, 'attachments', brandId ? Number(brandId) : undefined, draftId, (percent) => setUploadProgress(percent));
       const nextAttachment: ComposerAttachment = { id: `${Date.now()}-${filename}`, name: filename, url, mimeType, assetId };
       setPendingAttachments((current) => [...current, nextAttachment]);
       if (attachmentInputRef.current) {
@@ -1748,7 +2004,7 @@ function ComposeStep({
 
     try {
       if (attachmentToRemove.assetId) {
-        await deleteUploadedAsset(attachmentToRemove.assetId, brandId ? Number(brandId) : undefined);
+        await deleteUploadedAsset(attachmentToRemove.assetId, brandId ? Number(brandId) : undefined, draftId);
       }
     } catch (error) {
       console.error('Attachment delete failed', error);
@@ -1764,10 +2020,6 @@ function ComposeStep({
     });
   };
 
-  const handleRemoveAddedAttachment = (attachmentToRemove: ComposerAttachment) => {
-    setAttachments((current) => current.filter((attachment) => attachment.id !== attachmentToRemove.id));
-  };
-
   const cleanupAttachments = async () => {
     const allAttachments = [...pendingAttachments, ...attachments];
     const cleanupTargets = allAttachments.filter((attachment) => Boolean(attachment.assetId));
@@ -1779,7 +2031,7 @@ function ComposeStep({
     }
 
     await Promise.allSettled(
-      cleanupTargets.map((attachment) => deleteUploadedAsset(attachment.assetId, brandId ? Number(brandId) : undefined, 'attachment'))
+      cleanupTargets.map((attachment) => deleteUploadedAsset(attachment.assetId, brandId ? Number(brandId) : undefined, draftId, 'attachment'))
     );
 
     setPendingAttachments([]);
@@ -1797,8 +2049,51 @@ function ComposeStep({
     if (!activeBlock || activeBlock.role !== "image") return;
 
     const nextBlocks = templateLayout.map((item) => item.id === activeBlock.id ? { ...item, ...updates } : item);
+    applyLayoutUpdate(nextBlocks);
+  };
+
+  const imageBoxRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const commitImageCrop = async (blockId: string) => {
+    const block = templateLayout.find((b) => b.id === blockId);
+    const boxEl = imageBoxRefs.current[blockId];
+    if (!block?.imageUrl || !boxEl) return;
+
+    const rect = boxEl.getBoundingClientRect();
+    try {
+      const blob = await cropImageToBox(block.imageUrl, Math.round(rect.width), Math.round(rect.height), block.imageOffsetX ?? 0);
+      const file = new File([blob], "cropped.jpg", { type: "image/jpeg" });
+      const { url } = await uploadAsset(file, 'images', brandId ? Number(brandId) : undefined, draftId);
+      updateActiveImageBlock({ imageUrl: url, imageWidth: "100%", imageOffsetX: 0 });
+    } catch (err) {
+      console.error('[EmailComposer] crop-on-commit failed', err);
+    }
+  };
+
+  // Requirement #3: shared write path for any layout change that might
+  // remove the last remaining section. Centralized so both image removal
+  // (ImageSlotInput) and text-section removal go through the same
+  // all-removed check instead of duplicating it.
+  const applyLayoutUpdate = (nextBlocks: TemplateLayoutBlock[]) => {
     onTemplateLayoutChange(nextBlocks);
-    onChange("body", buildLayoutHtml(nextBlocks));
+    onChange("body", buildLayoutHtml(nextBlocks, templateId));
+    if (nextBlocks.length > 0 && nextBlocks.every((block) => block.removed)) {
+      onSwitchToBlankTemplate?.();
+    }
+  };
+
+  // Requirement #3: remove/restore any headline, body, or footer section —
+  // mirrors the image slot's own removed/restored toggle.
+  const toggleSectionRemoved = (blockId: string) => {
+    const nextBlocks = templateLayout.map((item) => item.id === blockId ? { ...item, removed: !item.removed } : item);
+    applyLayoutUpdate(nextBlocks);
+  };
+
+  // Restore a removed image slot (doesn't trigger blank template switch)
+  const handleRestoreImageSlot = (blockId: string) => {
+    const nextBlocks = templateLayout.map((item) => item.id === blockId ? { ...item, removed: false } : item);
+    onTemplateLayoutChange(nextBlocks);
+    onChange("body", buildLayoutHtml(nextBlocks, templateId));
   };
 
   // A preset template's text block just typed into directly — no more side
@@ -1807,9 +2102,23 @@ function ComposeStep({
   // controlled `value`, which is what was breaking the space bar and list/
   // color/alignment formatting.
   const handleBlockTextChange = (blockId: string, value: string) => {
-    const nextBlocks = templateLayout.map((item) => item.id === blockId ? { ...item, text: value } : item);
+    const currentBlock = templateLayout.find((item) => item.id === blockId);
+    if (currentBlock?.text === value) return; // Prevent infinite loop on initialization
+    
+    const nextBlocks = templateLayout.map((item) => {
+      if (item.id === blockId) {
+        // For image blocks, update imageUrl instead of text
+        if (item.role === "image") {
+          return { ...item, imageUrl: value };
+        }
+        // For text blocks, use the value as-is (Quill already provides HTML)
+        return { ...item, text: value };
+      }
+      return item;
+    });
+    
     onTemplateLayoutChange(nextBlocks);
-    onChange("body", buildLayoutHtml(nextBlocks));
+    onChange("body", buildLayoutHtml(nextBlocks, templateId));
   };
 
   // Header "Add Image" button. Blank template just opens the image panel —
@@ -1818,6 +2127,19 @@ function ComposeStep({
   // templates can only ever replace an existing slot.
   const handleAddImageClick = () => {
     if (isBlankTemplate) {
+      setSelectedBlankImageSrc(null);
+      setShowImagePanel((value) => !value);
+      return;
+    }
+
+    if (allImageSlotsRemoved) {
+      // Auto-focus the first available text block if none is focused
+      if (!activeEditorHandle) {
+        const firstTextBlock = templateLayout.find((block) => block.role !== "image" && !block.removed);
+        if (firstTextBlock) {
+          setActiveBlockId(firstTextBlock.id);
+        }
+      }
       setSelectedBlankImageSrc(null);
       setShowImagePanel((value) => !value);
       return;
@@ -1838,8 +2160,16 @@ function ComposeStep({
     setShowAttachmentsPanel((value) => !value);
   };
 
+  const handleAIRewriteMouseDown = (event: MouseEvent<HTMLElement>) => {
+    event.preventDefault(); // Prevent blur when clicking AI button
+  };
+
   const handleAIRewriteClick = () => {
     setShowAIWriter((value) => !value);
+  };
+
+  const handleCloseAIWriter = () => {
+    setShowAIWriter(false);
   };
 
   const renderAttachmentsPanel = () => (
@@ -1926,7 +2256,147 @@ function ComposeStep({
     </div>
   );
 
-  const activeImageBlock = !isBlankTemplate ? templateLayout.find((block) => block.id === activeBlockId && block.role === "image") : undefined;
+  const activeImageBlock = !isBlankTemplate ? templateLayout.find((block) => block.id === activeBlockId && block.role === "image" && !block.removed) : undefined;
+
+  // Requirement #2: once every image slot in this template has been
+  // removed, "insert image" falls back to dropping it inline in whichever
+  // text block currently has focus, the same way the blank template works.
+  const imageBlocksInTemplate = templateLayout.filter((block) => block.role === "image");
+  const allImageSlotsRemoved =
+    !isBlankTemplate && imageBlocksInTemplate.length > 0 && imageBlocksInTemplate.every((block) => block.removed);
+
+  const getInlineImageTargetHandle = (): ComposerEditorHandle | null => {
+    if (isBlankTemplate) return blankBodyEditorRef.current;
+    if (allImageSlotsRemoved) return activeEditorHandle;
+    return null;
+  };
+
+  // Reusable image panel for both blank template and fixed template when all slots removed
+  const renderImageInsertPanel = () => (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-slate-800">
+            {selectedBlankImageSrc ? "Replace image" : "Add image"}
+          </p>
+          <p className="text-xs text-slate-500 mt-1">
+            {selectedBlankImageSrc
+              ? "Click a different image in the email to switch, or replace this one below."
+              : "Paste a URL or upload a file — it drops in right where your cursor is."}
+          </p>
+        </div>
+      </div>
+
+      {selectedBlankImageSrc && (
+        <>
+          <img
+            src={selectedBlankImageSrc}
+            alt="Selected"
+            className="mt-3 h-32 w-full rounded-xl border border-slate-200 bg-white object-contain object-center"
+          />
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-medium text-slate-600">
+              <span className="mb-1 block">Size</span>
+              <input
+                type="range"
+                min="10"
+                max="100"
+                step="5"
+                value={blankImageWidth}
+                onChange={(event) => updateBlankImageStyle({ width: Number(event.target.value) })}
+                className="w-full"
+              />
+              <span className="mt-1 block text-slate-500">{blankImageWidth}%</span>
+            </label>
+
+            <label className="text-xs font-medium text-slate-600">
+              <span className="mb-1 block">Horizontal position</span>
+              <input
+                type="range"
+                min="-100"
+                max="100"
+                step="5"
+                value={blankImageOffsetX}
+                onChange={(event) => updateBlankImageStyle({ offsetX: Number(event.target.value) })}
+                className="w-full"
+              />
+              {/* % of the image's own width -- renders the same relative
+                  position in the composer, the preview pane, and the sent
+                  email regardless of container width. See extensions.ts. */}
+              <span className="mt-1 block text-slate-500">{blankImageOffsetX}%</span>
+            </label>
+
+            <label className="text-xs font-medium text-slate-600">
+              <span className="mb-1 block">Height</span>
+              <input
+                type="range"
+                min="50"
+                max="600"
+                step="10"
+                value={blankImageHeight ?? 240}
+                onChange={(event) => updateBlankImageStyle({ height: Number(event.target.value) })}
+                className="w-full"
+                disabled={blankImageHeight === null}
+              />
+              <span className="mt-1 flex items-center justify-between text-slate-500">
+                <span>{blankImageHeight === null ? "Auto" : `${blankImageHeight}px`}</span>
+                <button
+                  type="button"
+                  onClick={() => updateBlankImageStyle({ height: blankImageHeight === null ? 240 : null })}
+                  className="font-medium text-blue-600 hover:underline"
+                >
+                  {blankImageHeight === null ? "Set custom" : "Reset to auto"}
+                </button>
+              </span>
+            </label>
+          </div>
+
+          <label className="mt-3 block text-xs font-medium text-slate-600">
+            <span className="mb-1 block">Link URL (optional)</span>
+            <input
+              type="text"
+              value={blankImageHref}
+              onChange={(event) => setBlankImageHref(event.target.value)}
+              onBlur={(event) => updateBlankImageStyle({ href: event.target.value.trim() || null })}
+              placeholder="https://example.com"
+              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </label>
+        </>
+      )}
+
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <input
+          value={blankImageUrl}
+          onChange={(event) => setBlankImageUrl(event.target.value)}
+          placeholder="Paste image URL"
+          className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button
+          type="button"
+          onClick={handleInsertBlankImageUrl}
+          className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+        >
+          {selectedBlankImageSrc ? "Replace" : "Insert"}
+        </button>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleBlankImageUpload} />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-gray-50"
+        >
+          {uploadingImage ? "Uploading..." : "Upload from device"}
+        </button>
+      </div>
+      {uploadError ? <p className="mt-2 text-xs text-red-600">{uploadError}</p> : null}
+    </div>
+  );
+
+
 
   return (
     <div className="flex flex-col h-full relative">
@@ -1956,19 +2426,31 @@ function ComposeStep({
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={() => setIsPreviewMode((value) => !value)}
+              onClick={() => {
+                // form.body is already kept live on every keystroke by
+                // ComposerRichTextEditor's onChange (TipTap has no
+                // blur-only sync the way the old contentEditable did), so
+                // there's nothing extra to flush here before switching.
+                setIsPreviewMode((value) => !value);
+              }}
               className={`text-sm px-4 py-1.5 rounded-lg border transition-colors ${isPreviewMode ? "bg-blue-600 border-blue-600 text-white" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
             >
               Preview
             </button>
-            <button className="border border-gray-200 text-gray-600 text-sm px-4 py-1.5 rounded-lg hover:bg-gray-50">Save</button>
+            <button 
+              type="button"
+              onClick={onSaveDraft}
+              disabled={isAutoSaving}
+              className={`border border-gray-200 text-gray-600 text-sm px-4 py-1.5 rounded-lg hover:bg-gray-50 ${isAutoSaving ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {isAutoSaving ? 'Saving...' : 'Save'}
+            </button>
             <button
               onClick={onNext}
               className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors"
             >
               Send Now
             </button>
-            <button className="border border-gray-200 text-gray-600 px-2 py-1.5 rounded-lg hover:bg-gray-50">📅</button>
           </div>
         </div>
       </div>
@@ -1981,25 +2463,10 @@ function ComposeStep({
           attachments={attachments}
           templateId={templateId}
           templateLayout={templateLayout}
+          onDownloadAttachment={handleDownloadAttachment}
         />
       ) : (
         <>
-          {/* To */}
-          <div className="flex items-center px-6 py-3 border-b border-gray-100">
-            <span className="text-sm text-gray-500 w-10">To:</span>
-            <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
-                {getInitialLetter(isValidEmail(form.to) ? form.to.split("@")[0] : form.to || "T")}
-              </div>
-              <input
-                className="min-w-60 border-b border-transparent bg-transparent text-sm font-medium text-gray-700 focus:border-gray-300 focus:outline-none"
-                value={form.to || ""}
-                onChange={(event) => onChange("to", event.target.value)}
-                placeholder="recipient@email.com"
-              />
-            </div>
-          </div>
-
           {/* Subject */}
           <div className="px-6 py-3 border-b border-gray-100">
             <div className="flex items-center gap-3">
@@ -2015,7 +2482,8 @@ function ComposeStep({
                 disabled={isSubjectRewriting}
                 className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors disabled:opacity-60"
               >
-                {isSubjectRewriting ? "Rewriting..." : "✨ Rewrite"}
+                <img src={aiWriter} className="h-5 w-5" alt="" />
+                {isSubjectRewriting ? "Rewriting..." : "Rewrite"}
               </button>
             </div>
             {showSubjectRewritePanel && subjectSuggestions.length > 0 && (
@@ -2075,22 +2543,68 @@ function ComposeStep({
               <div className="xl:w-[60%] xl:min-w-0">
                 {isBlankTemplate ? (
                   <div
-                    className="rounded-3xl border border-slate-200 bg-white p-6 min-h-[26rem]"
+                    className="rounded-3xl border border-slate-200 bg-white p-6 min-h-104"
                     onClick={handleBlankPreviewClick}
                   >
-                    <RichTextEditor
-                      value={form.body}
-                      onChange={(value) => onChange('body', value)}
-                      placeholder="Start typing your email..."
-                      className="min-h-[24rem]"
-                      onEditorReady={(handle) => handleEditorFocus("blank-body", handle)}
-                      onSelectionChange={(value) => {
-                        setActiveSelectionText(value);
-                        if (value) {
-                          setWriterPrompt(value);
-                        }
-                      }}
-                    />
+                    <style>{`
+                      [data-composer-editor="blank-body"] img {
+                        cursor: pointer;
+                      }
+                      [data-composer-editor="blank-body"] img:hover {
+                        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+                      }
+                    `}</style>
+                    <div data-composer-editor="blank-body">
+                      <ComposerRichTextEditor
+                        ref={blankBodyEditorRef}
+                        content={form.body || ""}
+                        enableImages
+                        placeholder="Start typing your email..."
+                        className="w-full min-h-96 bg-transparent border-none outline-none whitespace-pre-wrap text-sm leading-6 text-slate-600"
+                        onChange={(html) => onChange('body', html)}
+                        onFocus={() => {
+                          setActiveBlockId("blank-body");
+                          if (blankBodyEditorRef.current) setActiveEditorHandle(blankBodyEditorRef.current);
+                        }}
+                        onSelectionChange={(selectedText) => {
+                          if (selectedText && blankBodyEditorRef.current) {
+                            aiWriterBridge.captureSelection(blankBodyEditorRef.current, selectedText);
+                            setWriterPrompt(selectedText);
+                          }
+                        }}
+                      />
+                    </div>
+
+                    {attachments.length > 0 && (
+                      <div
+                        className="mt-6 rounded-[20px] border border-slate-200 bg-slate-50 p-3"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Attachments</span>
+                          <span className="text-[11px] text-slate-400">{attachments.length} file{attachments.length > 1 ? 's' : ''}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {attachments.slice(0, 4).map((attachment) => (
+                            <button
+                              key={attachment.id}
+                              type="button"
+                              onClick={() => handleDownloadAttachment(attachment)}
+                              className="inline-flex max-w-40 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-100"
+                            >
+                              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-50 text-[10px] font-semibold text-blue-600">📎</span>
+                              <span className="truncate">{attachment.name}</span>
+                              <span className="ml-1 text-[11px" title="Download">⬇</span>
+                            </button>
+                          ))}
+                          {attachments.length > 4 && (
+                            <span className="inline-flex items-center rounded-full bg-slate-200 px-3 py-1.5 text-[11px] font-medium text-slate-600">
+                              +{attachments.length - 4} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <TemplatePreviewCanvas
@@ -2099,19 +2613,19 @@ function ComposeStep({
                     activeBlockId={activeBlockId}
                     onSelectBlock={handleSelectImageBlock}
                     attachments={attachments}
-                    onRemoveAttachment={handleRemoveAddedAttachment}
-                    brandName={brandName}
+                    onDownloadAttachment={handleDownloadAttachment}
                     onBlockTextChange={handleBlockTextChange}
                     onEditorFocus={handleEditorFocus}
-                    onBlockSelectionChange={(text) => {
-                      setActiveSelectionText(text);
-                      if (text) {
-                        setWriterPrompt(text);
-                      }
-                    }}
+                    onActivateBlock={handleActivateTextBlock}
+                    onSelectionChange={handleEditorSelectionChange}
+                    enableInlineImages={allImageSlotsRemoved}
+                    onToggleSectionRemoved={toggleSectionRemoved}
+                    onRestoreImageSlot={handleRestoreImageSlot}
+                    boxRefs={imageBoxRefs}
                   />
                 )}
               </div>
+
 
               <div className="xl:w-[40%] flex flex-col gap-4">
                 {isBlankTemplate ? (
@@ -2123,111 +2637,13 @@ function ComposeStep({
                       style={{ display: showImagePanel || selectedBlankImageSrc ? "none" : "block" }}
                     >
                       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Formatting</div>
-                      <CustomToolbar editor={activeEditor} disabled={!activeEditor} />
-                      {!activeEditor && (
+                      <ComposerToolbar activeEditor={activeEditorHandle} disabled={!activeBlockId} />
+                      {!activeBlockId && (
                         <p className="mt-2 text-xs text-slate-500">Click into the email to start formatting.</p>
                       )}
                     </div>
 
-                    {(showImagePanel || selectedBlankImageSrc) && (
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">
-                              {selectedBlankImageSrc ? "Replace image" : "Add image"}
-                            </p>
-                            <p className="text-xs text-slate-500 mt-1">
-                              {selectedBlankImageSrc
-                                ? "Click a different image in the email to switch, or replace this one below."
-                                : "Paste a URL or upload a file — it drops in right where your cursor is."}
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowImagePanel(false);
-                              setSelectedBlankImageSrc(null);
-                            }}
-                            className="text-xs font-medium text-slate-500 hover:text-slate-700"
-                          >
-                            Close
-                          </button>
-                        </div>
-
-                        {selectedBlankImageSrc && (
-                          <img
-                            src={selectedBlankImageSrc}
-                            alt="Selected"
-                            className="mt-3 h-32 w-full rounded-xl border border-slate-200 bg-white object-contain"
-                          />
-                        )}
-
-                        {selectedBlankImageSrc && (
-                          <div className="mt-3 space-y-3 border-t border-slate-200 pt-3">
-                            <label className="block text-xs font-medium text-slate-600">
-                              Size
-                              <input
-                                type="range"
-                                min={10}
-                                max={100}
-                                value={blankImageWidth}
-                                onChange={(event) => {
-                                  const width = Number(event.target.value);
-                                  setBlankImageWidth(width);
-                                  activeEditor?.updateImageStyle(selectedBlankImageSrc, { width });
-                                }}
-                                className="mt-1 w-full"
-                              />
-                              <span className="mt-1 block text-slate-500">{blankImageWidth}%</span>
-                            </label>
-                            <label className="block text-xs font-medium text-slate-600">
-                              Position
-                              <input
-                                type="range"
-                                min={-200}
-                                max={200}
-                                value={blankImageOffsetX}
-                                onChange={(event) => {
-                                  const offsetX = Number(event.target.value);
-                                  setBlankImageOffsetX(offsetX);
-                                  activeEditor?.updateImageStyle(selectedBlankImageSrc, { offsetX });
-                                }}
-                                className="mt-1 w-full"
-                              />
-                              <span className="mt-1 block text-slate-500">{blankImageOffsetX}px</span>
-                            </label>
-                          </div>
-                        )}
-
-                        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-                          <input
-                            value={blankImageUrl}
-                            onChange={(event) => setBlankImageUrl(event.target.value)}
-                            placeholder="Paste image URL"
-                            className="flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={handleInsertBlankImageUrl}
-                            className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-                          >
-                            {selectedBlankImageSrc ? "Replace" : "Insert"}
-                          </button>
-                        </div>
-
-                        <div className="mt-3 flex items-center gap-2">
-                          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleBlankImageUpload} />
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-gray-50"
-                          >
-                            {uploadingImage ? "Uploading..." : "Upload from device"}
-                          </button>
-                        </div>
-                        {uploadError ? <p className="mt-2 text-xs text-red-600">{uploadError}</p> : null}
-                      </div>
-                    )}
+                    {(showImagePanel || selectedBlankImageSrc) && renderImageInsertPanel()}
 
                     {showAttachmentsPanel && renderAttachmentsPanel()}
                   </>
@@ -2253,16 +2669,33 @@ function ComposeStep({
                           block={activeImageBlock}
                           onCommit={(nextValue) => updateActiveImageBlock({ imageUrl: nextValue })}
                           onUpload={handleImageUpload}
+                          onCommitCrop={() => commitImageCrop(activeBlockId!)}
                           uploading={uploadingImage}
                           uploadError={uploadError}
                           onStyleChange={updateActiveImageBlock}
+                          onRemove={() => {
+                            updateActiveImageBlock({ removed: true });
+                            setActiveBlockId(null);
+                          }}
                         />
                       </div>
+                    ) : allImageSlotsRemoved && (showImagePanel || selectedBlankImageSrc) ? (
+                      renderImageInsertPanel()
                     ) : (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Formatting</div>
-                        <CustomToolbar editor={activeEditor} disabled={!activeEditor} />
-                        {!activeEditor && (
+                        {activeBlockId ? (
+                          <>
+                            <ComposerToolbar activeEditor={activeEditorHandle} disabled={false} />
+                            <button
+                              type="button"
+                              onClick={() => toggleSectionRemoved(activeBlockId)}
+                              className="mt-3 w-full rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"
+                            >
+                              Remove this section
+                            </button>
+                          </>
+                        ) : (
                           <p className="mt-2 text-xs text-slate-500">Click into the headline, body, or footer text on the left to start formatting.</p>
                         )}
                       </div>
@@ -2279,74 +2712,108 @@ function ComposeStep({
 
       {/* Floating action cluster — Add File / Add Image / AI Writer */}
       {!isPreviewMode && (
-        <div className="absolute right-4 top-28 z-20 flex flex-col items-center gap-3">
+        <Draggable initialPosition={{ x: 500, y: 150 }} className="z-20 flex flex-col items-center gap-3">
           <button
             type="button"
             onClick={handleAddFileClick}
             title="Add file"
-            className={`flex h-11 w-11 items-center justify-center rounded-full border text-base shadow-md transition-colors ${showAttachmentsPanel ? "border-blue-600 bg-blue-600 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+            className={`flex flex-col h-14 w-14 items-center justify-center rounded-full border text-base shadow-md transition-colors ${showAttachmentsPanel ? "border-blue-600 bg-blue-600 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
           >
-            📎
+            <img src={addFile} className="w-5 h-5" alt="" />
+            <p className="text-[8px]">Add File</p>
           </button>
           <button
             type="button"
             onClick={handleAddImageClick}
             title="Add image"
-            className={`flex h-11 w-11 items-center justify-center rounded-full border text-base shadow-md transition-colors ${showImagePanel || selectedBlankImageSrc || activeImageBlock ? "border-blue-600 bg-blue-600 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
+            className={`flex flex-col h-14 w-14 items-center justify-center rounded-full border text-base shadow-md transition-colors ${showImagePanel || selectedBlankImageSrc || activeImageBlock ? "border-blue-600 bg-blue-600 text-white" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
           >
-            🖼️
+             <img src={addImage} className="w-5 h-5" alt="" />
+            <p className="text-[8px]">Add Image</p>
           </button>
           <button
             type="button"
+            onMouseDown={handleAIRewriteMouseDown}
             onClick={handleAIRewriteClick}
             title="AI Writer"
-            className={`flex h-11 w-11 items-center justify-center rounded-full text-base text-white shadow-md transition-colors ${showAIWriter ? "bg-blue-700" : "bg-blue-600 hover:bg-blue-700"}`}
+            className={`flex flex-col h-14 w-14 items-center justify-center rounded-full text-base text-white shadow-md transition-colors ${showAIWriter ? "bg-blue-700" : "bg-blue-600 hover:bg-blue-700"}`}
           >
-            ✨
+             <img src={aiWriter} className="w-5 h-5" alt="" />
+            <p className="text-[8px]">Ai Writer</p>
           </button>
-        </div>
+          <button
+            type="button"
+            onMouseDown={handleAIRewriteMouseDown}
+            onClick={handleCloseAIWriter}
+            title="Close AI Writer"
+            className={`flex h-11 w-11 items-center justify-center rounded-full border text-base shadow-md transition-colors ${showAIWriter ? "border-gray-200 bg-white text-gray-600 hover:bg-gray-50" : "hidden"}`}
+          >
+            ✕
+          </button>
+        </Draggable>
       )}
 
       {showAIWriter && !isPreviewMode && (
-        <AIWriterPopup
-          onClose={() => setShowAIWriter(false)}
-          selectedWriterId={selectedWriterId}
-          onSelectWriter={setSelectedWriterId}
-          prompt={writerPrompt}
-          onPromptChange={setWriterPrompt}
-          onGenerate={handleRewriteSelection}
-          readOnly={Boolean(activeSelectionText)}
-          isRewriting={isRewritingSelection}
-        />
+        <Draggable initialPosition={{ x: 200, y: 300 }}>
+          <AIWriterPopup
+              onClose={handleCloseAIWriter}
+              selectedWriterId={selectedWriterId}
+              onSelectWriter={setSelectedWriterId}
+              prompt={writerPrompt}
+              onPromptChange={setWriterPrompt}
+              onGenerate={handleRewriteSelection}
+              isRewriting={isRewritingSelection}
+            />
+        </Draggable>
       )}
 
-      {pendingRewrite && (
+      {rewrittenText && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/30 p-4">
           <div className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
-            <h3 className="text-lg font-semibold text-gray-900">Approve rewritten text?</h3>
-            <p className="mt-2 text-sm text-gray-500">Review the replacement before applying it to your email.</p>
-            <div className="mt-4 space-y-3">
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Original</p>
-                <p className="mt-1 text-sm text-gray-700">{pendingRewrite.originalText}</p>
-              </div>
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">New</p>
-                <p className="mt-1 text-sm text-gray-700">{pendingRewrite.rewrittenText}</p>
-              </div>
+            <h3 className="text-lg font-semibold text-gray-900">AI Rewritten Text</h3>
+            <p className="mt-2 text-sm text-gray-500">
+              {aiWriterBridge.highlightedText
+                ? "Approve to drop this back in where you highlighted it, or just copy it."
+                : "Copy the rewritten text below to use in your email."}
+            </p>
+            <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{rewrittenText}</p>
             </div>
+            {replaceUnavailable && (
+              <p className="mt-2 text-xs text-amber-600">
+                Couldn't find where that text was highlighted anymore (you may have clicked elsewhere) — copy it instead.
+              </p>
+            )}
             <div className="mt-5 flex justify-end gap-2">
               <button
-                onClick={() => setPendingRewrite(null)}
+                onClick={() => {
+                  setRewrittenText(null);
+                  setReplaceUnavailable(false);
+                }}
                 className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-600"
               >
-                Discard
+                Close
               </button>
               <button
-                onClick={handleApproveRewrite}
-                className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white"
+                onClick={handleCopyRewrittenText}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50"
               >
-                Approve
+                📋 Copy
+              </button>
+              {/* Requirement #6: approve -> replace exactly what was highlighted */}
+              <button
+                onClick={() => {
+                  const didReplace = aiWriterBridge.approveReplacement(rewrittenText);
+                  if (didReplace) {
+                    setRewrittenText(null);
+                    setReplaceUnavailable(false);
+                  } else {
+                    setReplaceUnavailable(true);
+                  }
+                }}
+                className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                ✓ Approve &amp; Replace
               </button>
             </div>
           </div>
@@ -2359,12 +2826,16 @@ function ComposeStep({
 // ─── Confirm Step ─────────────────────────────────────────────────────────────
 
 function ConfirmStep({
-  form, onChange, onSend, sent,
+  form, onChange, onSend, sent, categories, isSending, sendError, sendVia,
 }: {
   form: ConfirmForm;
   onChange: <K extends keyof ConfirmForm>(k: K, v: ConfirmForm[K]) => void;
   onSend: () => void;
   sent: boolean;
+  categories: Category[];
+  isSending: boolean;
+  sendError: string | null;
+  sendVia?: SendVia;
 }) {
   if (sent) {
     return (
@@ -2378,6 +2849,127 @@ function ConfirmStep({
         >
           ← Finish and Exit
         </button>
+      </div>
+    );
+  }
+
+  // AI flow special case: only show test email + Start Agent button
+  if (form.isFromAIFlow) {
+    return (
+      <div className="px-8 py-10 max-w-xl mx-auto w-full">
+        <h2 className="text-2xl font-bold text-gray-900 text-center mb-1">Start AI Agent</h2>
+        <p className="text-gray-500 text-sm text-center mb-8">Configure and start your AI agent</p>
+
+        {/* Test email */}
+        <div className="mb-6">
+          <label className="text-sm font-medium text-gray-700 mb-2 block">Test Email</label>
+          <div className="flex gap-2">
+            <input
+              className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={form.testEmail}
+              onChange={e => onChange("testEmail", e.target.value)}
+              placeholder="your@email.com"
+            />
+            <button className="border border-gray-300 text-gray-700 text-sm font-semibold px-4 py-2.5 rounded-xl hover:bg-gray-50 transition-colors">
+              Send Test
+            </button>
+          </div>
+        </div>
+
+        <hr className="border-gray-100 mb-6" />
+
+        {/* Recipients */}
+        <div className="mb-6">
+          <label className="text-sm font-medium text-gray-700 mb-2 block">
+            Recipients
+            {sendVia === "broadcast" && (
+              <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                Broadcast Mode: Max 3 categories, 250k each
+              </span>
+            )}
+          </label>
+          <div className="border border-gray-200 rounded-xl p-3 max-h-40 overflow-y-auto">
+            {categories.length === 0 ? (
+              <p className="text-sm text-gray-400">No categories available</p>
+            ) : (
+              categories.map(cat => {
+                const isSelected = form.clientCategoryIds.includes(cat.id);
+                const isBroadcast = sendVia === "broadcast";
+                const exceedsLimit = isBroadcast && cat.count && cat.count > 250000;
+                const wouldExceedMaxCategories = isBroadcast && !isSelected && form.clientCategoryIds.length >= 3;
+                const isDisabled = exceedsLimit || wouldExceedMaxCategories;
+
+                return (
+                  <label 
+                    key={cat.id} 
+                    className={`flex items-center gap-2 py-2 cursor-pointer ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      disabled={isDisabled}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          onChange("clientCategoryIds", [...form.clientCategoryIds, cat.id]);
+                        } else {
+                          onChange("clientCategoryIds", form.clientCategoryIds.filter(id => id !== cat.id));
+                        }
+                      }}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <div className="flex-1">
+                      <span className="text-sm text-gray-700">{cat.name}</span>
+                      {cat.count !== undefined && cat.count !== null && (
+                        <span className="text-xs text-gray-500 ml-2">
+                          ({cat.count.toLocaleString()} clients)
+                        </span>
+                      )}
+                    </div>
+                    {exceedsLimit && (
+                      <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                        Exceeds 250k limit
+                      </span>
+                    )}
+                    {wouldExceedMaxCategories && (
+                      <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                        Max 3 categories
+                      </span>
+                    )}
+                  </label>
+                );
+              })
+            )}
+          </div>
+          {sendVia === "broadcast" && form.clientCategoryIds.length > 0 && (
+            <p className="text-xs text-gray-500 mt-2">
+              {form.clientCategoryIds.length}/3 categories selected
+            </p>
+          )}
+        </div>
+
+        <button
+          onClick={onSend}
+          disabled={isSending || form.clientCategoryIds.length === 0}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        >
+          {isSending ? (
+            <>
+              <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Starting Agent...
+            </>
+          ) : (
+            "Start Agent"
+          )}
+        </button>
+
+        {sendError && (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-xl">
+            <p className="text-sm text-red-700">{sendError}</p>
+          </div>
+        )}
       </div>
     );
   }
@@ -2401,6 +2993,77 @@ function ConfirmStep({
             Send Test
           </button>
         </div>
+      </div>
+
+      <hr className="border-gray-100 mb-6" />
+
+      {/* Recipients */}
+      <div className="mb-6">
+        <label className="text-sm font-medium text-gray-700 mb-2 block">
+          Recipients
+          {sendVia === "broadcast" && (
+            <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+              Broadcast Mode: Max 3 categories, 250k each
+            </span>
+          )}
+        </label>
+        <div className="border border-gray-200 rounded-xl p-3 max-h-40 overflow-y-auto">
+          {categories.length === 0 ? (
+            <p className="text-sm text-gray-400">No categories available</p>
+          ) : (
+            categories.map(cat => {
+              const isSelected = form.clientCategoryIds.includes(cat.id);
+              const isBroadcast = sendVia === "broadcast";
+              const exceedsLimit = isBroadcast && cat.count && cat.count > 250000;
+              const wouldExceedMaxCategories = isBroadcast && !isSelected && form.clientCategoryIds.length >= 3;
+              const isDisabled = exceedsLimit || wouldExceedMaxCategories;
+
+              return (
+                <label 
+                  key={cat.id} 
+                  className={`flex items-center gap-2 py-2 cursor-pointer ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    disabled={isDisabled}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        onChange("clientCategoryIds", [...form.clientCategoryIds, cat.id]);
+                      } else {
+                        onChange("clientCategoryIds", form.clientCategoryIds.filter(id => id !== cat.id));
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                  />
+                  <div className="flex-1">
+                    <span className="text-sm text-gray-700">{cat.name}</span>
+                    {cat.count !== undefined && cat.count !== null && (
+                      <span className="text-xs text-gray-500 ml-2">
+                        ({cat.count.toLocaleString()} clients)
+                      </span>
+                    )}
+                  </div>
+                  {exceedsLimit && (
+                    <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                      Exceeds 250k limit
+                    </span>
+                  )}
+                  {wouldExceedMaxCategories && (
+                    <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                      Max 3 categories
+                    </span>
+                  )}
+                </label>
+              );
+            })
+          )}
+        </div>
+        {sendVia === "broadcast" && form.clientCategoryIds.length > 0 && (
+          <p className="text-xs text-gray-500 mt-2">
+            {form.clientCategoryIds.length}/3 categories selected
+          </p>
+        )}
       </div>
 
       <hr className="border-gray-100 mb-6" />
@@ -2459,53 +3122,126 @@ function ConfirmStep({
 
       <button
         onClick={onSend}
-        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors"
+        disabled={form.clientCategoryIds.length === 0 || isSending}
+        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
-        {form.delivery === "now" ? "Send Now" : "Schedule Broadcast"}
+        {isSending ? (
+          <>
+            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            {form.delivery === "now" ? "Sending..." : "Scheduling..."}
+          </>
+        ) : (
+          form.delivery === "now" ? "Send Now" : "Schedule Broadcast"
+        )}
       </button>
+
+      {sendError && (
+        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-xl">
+          <p className="text-sm text-red-700">{sendError}</p>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Root Composer ────────────────────────────────────────────────────────────
 
-export function EmailComposerModal({ onClose, prefilled, templateId }: Props) {
+export function EmailComposerModal({ onClose, prefilled, templateId, brand, draftId }: Props) {
   const [step, setStep] = useState<ComposerStep>("compose");
   const [sent, setSent] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const user = useAuthStore((state) => state.user);
   const { brandId } = useParams();
   const [templateLayout, setTemplateLayout] = useState<TemplateLayoutBlock[]>(() => safeBuildTemplateLayout(templateId));
 
+  // Requirement #3: local override so the composer can seamlessly fall
+  // back to the blank template when every section of a fixed template
+  // gets removed, without needing the parent page to change its own
+  // templateId prop. Clearing back to undefined whenever the *external*
+  // templateId prop changes means a genuinely new template selection from
+  // outside always wins over a stale internal fallback.
+  const [templateOverride, setTemplateOverride] = useState<number | undefined>(undefined);
+  const effectiveTemplateId = templateOverride !== undefined ? templateOverride : templateId;
+
+  useEffect(() => {
+    // Only clear templateOverride if we're not loading from a draft
+    // When loading from a draft, templateOverride is set from prefilled.templateId
+    // and should not be cleared by templateId prop changes
+    if (draftId === undefined) {
+      setTemplateOverride(undefined);
+    }
+  }, [templateId, draftId]);
+
   const composeCleanupRef = useRef<(() => Promise<void>) | null>(null);
+
+  // Draft-related state
+  const [currentDraftId, setCurrentDraftId] = useState<number | null>(draftId ?? null);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Update currentDraftId when draftId prop changes
+  useEffect(() => {
+    if (draftId !== undefined && draftId !== currentDraftId) {
+      setCurrentDraftId(draftId);
+    }
+  }, [draftId, currentDraftId]);
 
   const [compose, setCompose] = useState<ComposeForm>({
     name: user ? `${user.first_name} ${user.last_name}` : "User",
     from: user?.email || "",
     to: "",
-    subject: prefilled?.subject ?? "Website Design Proposal",
-    preview: prefilled?.preview ?? (prefilled?.subject ? `${prefilled.subject} — read more inside` : "My Summer Slash Design Package Is Here And You'reInvited To Join!"),
+    subject: prefilled?.subject ?? "",
+    preview: prefilled?.preview ?? "",
     body: prefilled?.body ?? "",
+    attachments: [], // Initialize empty, will be synced from local attachments state
+    footer: prefilled?.footer ?? "",
+    address: prefilled?.address ?? "",
   });
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  // Fetch categories for recipient selection in confirm step
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const cats = await clientService.getCategories();
+        setCategories(cats);
+      } catch (error) {
+        console.error("Failed to fetch categories:", error);
+      }
+    };
+    void fetchCategories();
+  }, []);
 
   const [confirm, setConfirm] = useState<ConfirmForm>({
     testEmail: user?.email || "",
     delivery: "later",
     scheduleDate: "2023-05-16",
     scheduleTime: "23:39",
+    clientCategoryIds: [],
+    isFromAIFlow: prefilled?.aiResult ? true : false,
   });
 
   useEffect(() => {
-    const nextLayout = safeBuildTemplateLayout(templateId);
+    // Build initial template layout, but don't override if we have prefilled templateLayout
+    // Use effectiveTemplateId instead of templateId to respect templateOverride from drafts
+    if (prefilled?.templateLayout) {
+      return;
+    }
+
+    const nextLayout = safeBuildTemplateLayout(effectiveTemplateId, prefilled?.aiResult);
     setTemplateLayout(nextLayout);
 
-    if (templateId && templateId !== 0) {
+    if (effectiveTemplateId && effectiveTemplateId !== 0) {
       setCompose((current) => ({
         ...current,
-        body: current.body || buildLayoutHtml(nextLayout),
+        body: current.body || buildLayoutHtml(nextLayout, effectiveTemplateId),
       }));
     }
-  }, [templateId]);
+  }, [effectiveTemplateId, prefilled?.aiResult, prefilled?.templateLayout]);
 
   // `prefilled` re-runs this effect whenever it changes *by reference* — and
   // if the parent that renders <EmailComposerModal prefilled={{...}} /> ever
@@ -2521,8 +3257,30 @@ export function EmailComposerModal({ onClose, prefilled, templateId }: Props) {
     if (!prefilled) return;
 
     const signature = JSON.stringify({ templateId, prefilled });
-    if (appliedPrefillSignatureRef.current === signature) return;
+    if (appliedPrefillSignatureRef.current === signature) {
+      return;
+    }
     appliedPrefillSignatureRef.current = signature;
+
+    // First, restore draft-specific state if available
+    if (prefilled.templateLayout) {
+      setTemplateLayout(prefilled.templateLayout);
+    }
+    if (prefilled.templateId) {
+      setTemplateOverride(prefilled.templateId);
+    }
+    // Note: attachments are handled by a separate effect to avoid conflicts
+    if (prefilled.footer) {
+      setCompose((current) => ({ ...current, footer: prefilled.footer || "" }));
+    }
+    if (prefilled.address) {
+      setCompose((current) => ({ ...current, address: prefilled.address || "" }));
+    }
+
+    // Skip AI logic if we're restoring from a draft with template layout
+    if (prefilled.templateLayout) {
+      return;
+    }
 
     const aiResult = prefilled.aiResult;
     const nextSubjectFromAi = aiResult ? resolveContentValue(aiResult, [
@@ -2532,8 +3290,8 @@ export function EmailComposerModal({ onClose, prefilled, templateId }: Props) {
       "preview", "data.preview", "result.preview", "description", "data.description", "result.description", "summary",
     ]) : "";
     const nextBodyFromAi = aiResult ? resolveContentValue(aiResult, [
-      "html_body", "data.html_body", "result.html_body", "body", "data.body", "result.body", "content", "data.content", "result.content",
-    ]) : "";
+      "html_body", "data.html_body", "result.html_body", "body", "data.body", "result.body", "content", "data.content", "result.content"], true
+    ) : "";
 
     const hasExplicitPrefill = Boolean(prefilled.subject || prefilled.preview || prefilled.body);
     const hasAiPrefill = isNonEmptyAiResult(aiResult) || nextSubjectFromAi || nextPreviewFromAi || nextBodyFromAi;
@@ -2546,17 +3304,236 @@ export function EmailComposerModal({ onClose, prefilled, templateId }: Props) {
       body: (prefilled.body ?? nextBodyFromAi) || current.body || "",
     }));
 
-    if (hasAiPrefill) {
-      setTemplateLayout(
-        safeBuildTemplateLayout(templateId, {
-          ...(aiResult ?? {}),
-          headline: nextSubjectFromAi,
-          preview: nextPreviewFromAi,
-          body: nextBodyFromAi,
-        })
-      );
+    // Always rebuild template layout when AI content is present
+    if (aiResult) {
+      const newLayout = safeBuildTemplateLayout(templateId, {
+        ...(aiResult ?? {}),
+        headline: nextSubjectFromAi,
+        preview: nextPreviewFromAi,
+        body: nextBodyFromAi,
+      });
+      setTemplateLayout(newLayout);
     }
   }, [prefilled, templateId]);
+
+  // ─── Draft Management ─────────────────────────────────────────────────────────────
+
+  // Create or update draft based on current composer state
+  const saveDraft = useCallback(async () => {
+    console.log('[EmailComposer] saveDraft called');
+    const brandIdNumber = brandId ? Number(brandId) : undefined;
+    console.log('[EmailComposer] brandIdNumber:', brandIdNumber);
+
+    if (!brandIdNumber) {
+      console.warn('[EmailComposer] No brandId, skipping save');
+      return;
+    }
+
+    try {
+      setIsAutoSaving(true);
+
+      const domainId = brand?.domains?.[0]?.id;
+      console.log('[EmailComposer] domainId:', domainId);
+
+      // Only create draft if we have a domain, otherwise skip
+      if (!domainId) {
+        console.warn('[EmailComposer] No domainId, skipping save');
+        setIsAutoSaving(false);
+        return;
+      }
+      
+      // Extract sections content from template layout
+      const sectionsContent = templateLayout.map(block => ({
+        section_id: block.id,
+        html: block.text || ''
+      }));
+
+      // Extract removed sections
+      const removedSections = templateLayout.filter(block => block.removed).map(block => block.id);
+
+      // Extract custom images from template layout
+      const customImages = templateLayout
+        .filter(block => block.role === 'image' && block.imageUrl)
+        .map(block => ({
+          id: block.id,
+          url: block.imageUrl,
+          width: block.imageWidth,
+          position_x: block.imageOffsetX,
+          link_url: block.imageLinkUrl,
+          section_id: block.id,
+          slot_id: block.id,
+          is_custom: true,
+          is_removed: block.removed || false
+        }));
+
+      const draftPayload: any = {
+        brand_id: brandIdNumber,
+        domain_id: domainId,
+        template_id: effectiveTemplateId,
+        from_name: compose.name,
+        head: compose.subject,
+        preview: compose.preview,
+        template_layout: JSON.stringify(templateLayout),
+        sections_content: JSON.stringify(sectionsContent),
+        removed_sections: JSON.stringify(removedSections),
+        custom_images: JSON.stringify(customImages),
+        attachments: JSON.stringify(compose.attachments),
+        html: compose.body,
+        footer: compose.footer,
+        address: compose.address,
+      };
+
+      // Only add AI metadata if they have actual values (not undefined)
+      // NOTE: Backend currently requires these fields, so we provide minimal defaults if needed
+      // This should be removed once backend makes these fields truly optional
+      const aiAgentId = prefilled?.aiResult?.ai_agent_id;
+      const aiGoal = prefilled?.aiResult?.ai_goal;
+      const businessType = prefilled?.aiResult?.business_type;
+      const toneId = prefilled?.aiResult?.tone_id;
+      
+      if (aiAgentId !== undefined) {
+        draftPayload.ai_agent_id = aiAgentId;
+      } else {
+        // Backend requires this field - temporary default
+        draftPayload.ai_agent_id = 1;
+      }
+      if (aiGoal !== undefined) {
+        draftPayload.ai_goal = aiGoal;
+      } else {
+        // Backend requires this field - temporary default
+        draftPayload.ai_goal = "General";
+      }
+      if (businessType !== undefined) {
+        draftPayload.business_type = businessType;
+      } else {
+        // Backend requires this field - temporary default
+        draftPayload.business_type = "General";
+      }
+      if (toneId !== undefined) {
+        draftPayload.tone_id = toneId;
+      } else {
+        // Backend requires this field - temporary default
+        draftPayload.tone_id = 1;
+      }
+
+      if (currentDraftId) {
+        // Update existing draft
+        console.log('[EmailComposer] Updating existing draft:', currentDraftId);
+        console.log('[EmailComposer] Update payload:', draftPayload);
+        await draftService.updateDraft(currentDraftId, draftPayload);
+        console.log('[EmailComposer] Draft updated successfully');
+      } else {
+        // Create new draft
+        console.log('[EmailComposer] Creating new draft...');
+        // Extract sections content from template layout
+        const sectionsContent = templateLayout.map(block => ({
+          section_id: block.id,
+          html: block.text || ''
+        }));
+
+        // Extract removed sections
+        const removedSections = templateLayout.filter(block => block.removed).map(block => block.id);
+
+        // Extract custom images from template layout
+        const customImages = templateLayout
+          .filter(block => block.role === 'image' && block.imageUrl)
+          .map(block => ({
+            id: block.id,
+            url: block.imageUrl,
+            width: block.imageWidth,
+            position_x: block.imageOffsetX,
+            link_url: block.imageLinkUrl,
+            section_id: block.id,
+            slot_id: block.id,
+            is_custom: true,
+            is_removed: block.removed || false
+          }));
+
+        const newDraftPayload: any = {
+          brand_id: brandIdNumber,
+          domain_id: brand?.domains?.[0]?.id,
+          template_id: effectiveTemplateId,
+          from_name: compose.name,
+          head: compose.subject,
+          preview: compose.preview,
+          template_layout: JSON.stringify(templateLayout),
+          sections_content: JSON.stringify(sectionsContent),
+          removed_sections: JSON.stringify(removedSections),
+          custom_images: JSON.stringify(customImages),
+          attachments: JSON.stringify(compose.attachments),
+          html: compose.body,
+          footer: compose.footer,
+          address: compose.address,
+        };
+
+        // Only add AI metadata if they have actual values (not undefined)
+        // NOTE: Backend currently requires these fields, so we provide minimal defaults if needed
+        // This should be removed once backend makes these fields truly optional
+        const aiAgentId = prefilled?.aiResult?.ai_agent_id;
+        const aiGoal = prefilled?.aiResult?.ai_goal;
+        const businessType = prefilled?.aiResult?.business_type;
+        const toneId = prefilled?.aiResult?.tone_id;
+
+        if (aiAgentId !== undefined) {
+          newDraftPayload.ai_agent_id = aiAgentId;
+        } else {
+          // Backend requires this field - temporary default
+          newDraftPayload.ai_agent_id = 1;
+        }
+        if (aiGoal !== undefined) {
+          newDraftPayload.ai_goal = aiGoal;
+        } else {
+          // Backend requires this field - temporary default
+          newDraftPayload.ai_goal = "General";
+        }
+        if (businessType !== undefined) {
+          newDraftPayload.business_type = businessType;
+        } else {
+          // Backend requires this field - temporary default
+          newDraftPayload.business_type = "General";
+        }
+        if (toneId !== undefined) {
+          newDraftPayload.tone_id = toneId;
+        } else {
+          // Backend requires this field - temporary default
+          newDraftPayload.tone_id = 1;
+        }
+
+        console.log('[EmailComposer] Creating draft with payload:', newDraftPayload);
+        const newDraft = await draftService.createDraft(newDraftPayload);
+        console.log('[EmailComposer] New draft created:', newDraft);
+        setCurrentDraftId(newDraft.id);
+      }
+    } catch (error) {
+      console.error('Failed to save draft:', error);
+    } finally {
+      setIsAutoSaving(false);
+    }
+  }, [brandId, compose, currentDraftId, prefilled, brand, effectiveTemplateId, templateLayout]);
+
+  // Auto-save on composer changes with debouncing
+  useEffect(() => {
+    console.log('[EmailComposer] Compose changed, scheduling auto-save in 2s');
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      console.log('[EmailComposer] Auto-save timeout triggered');
+      saveDraft();
+    }, 2000); // Auto-save after 2 seconds of inactivity
+
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [compose, saveDraft]);
+
+  // Manual save handler
+  const handleManualSave = useCallback(async () => {
+    await saveDraft();
+  }, [saveDraft]);
 
   const handleModalClose = async () => {
     try {
@@ -2574,37 +3551,189 @@ export function EmailComposerModal({ onClose, prefilled, templateId }: Props) {
     if (isSending) return;
 
     setIsSending(true);
+    setSendError(null);
     try {
+      // Ensure draft is saved first
+      if (!currentDraftId) {
+        console.log('[EmailComposer] Saving draft before send...');
+        await saveDraft();
+      }
+
       const brandIdNumber = brandId ? Number(brandId) : undefined;
-      const sendPayload = {
-        brand_id: brandIdNumber,
-        subject: compose.subject,
-        preview: compose.preview,
-        body: compose.body,
-        test_email: confirm.testEmail || undefined,
-        delivery_type: confirm.delivery,
-        schedule_date: confirm.delivery === "later" ? confirm.scheduleDate : undefined,
-        schedule_time: confirm.delivery === "later" ? confirm.scheduleTime : undefined,
-        status: confirm.delivery === "later" ? "scheduled" : "sent",
-      };
+      const domainId = brand && brand.domains && brand.domains.length > 0 ? brand.domains[0].id : undefined;
+      const draftIdNumber = currentDraftId;
 
-      await composerWorkflowService.createSendLog(sendPayload);
+      console.log('[EmailComposer] Send details:', {
+        draftId: draftIdNumber,
+        brandId: brandIdNumber,
+        domainId: domainId,
+        isFromAIFlow: confirm.isFromAIFlow,
+        delivery: confirm.delivery,
+        clientCategoryIds: confirm.clientCategoryIds,
+      });
 
-      if (confirm.delivery === "later" && brandIdNumber) {
-        await composerWorkflowService.createDeliverySchedule({
-          brand_id: brandIdNumber,
-          subject: compose.subject,
-          preview: compose.preview,
-          body: compose.body,
-          test_email: confirm.testEmail || undefined,
-          schedule_date: confirm.scheduleDate,
-          schedule_time: confirm.scheduleTime,
+      if (!draftIdNumber || !brandIdNumber || !domainId) {
+        throw new Error("Missing required draft, brand, or domain ID");
+      }
+
+      // Determine action and schedule date/time
+      let action: "send now" | "send later" = "send later";
+      let scheduleDate: string | null = null;
+      let scheduleTime: string | null = null;
+
+      if (confirm.isFromAIFlow && prefilled?.aiResult) {
+        // AI agent scheduling - use start date from AI flow
+        const aiStartDate = prefilled.aiResult.start_date as string;
+        const aiStopDate = prefilled.aiResult.stop_date as string;
+        if (aiStartDate) {
+          scheduleDate = aiStartDate.split('T')[0];
+          scheduleTime = aiStartDate.split('T')[1]?.substring(0, 5) || "00:00";
+          action = "send later";
+          console.log('[EmailComposer] Using AI agent schedule:', { scheduleDate, scheduleTime, stopDate: aiStopDate });
+        }
+      } else if (confirm.delivery === "now") {
+        // Send now - use current date/time (backend expects valid strings)
+        action = "send now";
+        const now = new Date();
+        scheduleDate = now.toISOString().split('T')[0];
+        scheduleTime = now.toTimeString().substring(0, 5);
+        console.log('[EmailComposer] Send now - using current date/time:', { scheduleDate, scheduleTime, now: now.toISOString() });
+      } else {
+        // Send later - use selected date/time
+        action = "send later";
+        scheduleDate = confirm.scheduleDate;
+        scheduleTime = confirm.scheduleTime;
+        console.log('[EmailComposer] Send later - raw values:', { 
+          confirmScheduleDate: confirm.scheduleDate, 
+          confirmScheduleTime: confirm.scheduleTime,
+          scheduleDate, 
+          scheduleTime 
         });
       }
 
+      // Log current time for comparison
+      const currentTime = new Date();
+      console.log('[EmailComposer] Current time for comparison:', currentTime.toISOString());
+
+      // Create delivery schedule
+      console.log('[EmailComposer] Creating delivery schedule...');
+      const schedulePayload = {
+        brand_id: brandIdNumber,
+        draft_id: draftIdNumber,
+        domain_id: domainId,
+        action,
+        date: scheduleDate,
+        time: scheduleTime,
+      };
+      console.log('[EmailComposer] Delivery schedule payload:', schedulePayload);
+      const scheduleResult = await composerWorkflowService.createDeliverySchedule(schedulePayload);
+      console.log('[EmailComposer] Delivery schedule created:', scheduleResult);
+
+      // Send campaign with recipient categories
+      if (confirm.clientCategoryIds.length > 0) {
+        // Check brand send mode and validate accordingly
+        const sendVia = brand?.sendVia;
+        console.log('[EmailComposer] Brand send mode:', sendVia);
+
+        // Append forced footer to email HTML before sending
+        // Map backend footer fields to FooterSettings
+        const footerSettings = brand?.unsuscribe_information || brand?.footer_address || brand?.newsletter_badge !== undefined ? {
+          unsubscribeText: brand?.unsuscribe_information || "You are receiving this email because you opted in via our site.\n\nWant to change how you receive these emails?\nYou can unsubscribe from this list.",
+          companyName: brand?.footer_address?.split('\n')[0] || "Company Name",
+          address: brand?.footer_address?.split('\n')[1] || "99 Street Address",
+          cityStateZip: brand?.footer_address?.split('\n')[2] || "City, STATE 000-000",
+          removeBadge: !brand?.newsletter_badge,
+        } : null;
+        
+        console.log('[EmailComposer] Footer settings from brand:', footerSettings);
+        
+        if (footerSettings) {
+          const sendType = sendVia === "broadcast" ? "broadcast" : "campaign";
+          console.log('[EmailComposer] Appending footer to email, send type:', sendType);
+          
+          // Use brand logo URL if available, otherwise use local logo
+          const logoUrl = "https://ainewsletter-eta.vercel.app/favicon.png";
+          console.log('[EmailComposer] Using logo URL:', logoUrl);
+          
+          // Get current draft HTML
+          const currentDraft = await draftService.getDraft(draftIdNumber);
+          console.log('[EmailComposer] Current draft HTML length:', currentDraft?.html?.length);
+          
+          if (currentDraft && currentDraft.html) {
+            const emailHtmlWithFooter = appendFooterToEmail(
+              currentDraft.html,
+              footerSettings,
+              sendType,
+              logoUrl
+            );
+            
+            console.log('[EmailComposer] Email HTML with footer length:', emailHtmlWithFooter.length);
+            console.log('[EmailComposer] Footer HTML preview:', emailHtmlWithFooter.slice(-500));
+            
+            // Update draft with footer-included HTML
+            console.log('[EmailComposer] Updating draft with footer-included HTML');
+            await draftService.updateDraft(draftIdNumber, { 
+              html: emailHtmlWithFooter,
+              footer: footerSettings.unsubscribeText,
+              address: `${footerSettings.companyName}\n${footerSettings.address}\n${footerSettings.cityStateZip}`
+            });
+            console.log('[EmailComposer] Draft updated successfully');
+          } else {
+            console.warn('[EmailComposer] No current draft or HTML found');
+          }
+        } else {
+          console.warn('[EmailComposer] No footer settings found on brand');
+        }
+
+        // Validate broadcast mode restrictions
+        if (sendVia === "broadcast") {
+          const validation = validateBroadcastSelection(
+            confirm.clientCategoryIds,
+            categories,
+            sendVia
+          );
+          
+          if (!validation.isValid) {
+            const errorMessage = getValidationErrorMessage(validation);
+            console.error('[EmailComposer] Broadcast validation failed:', errorMessage);
+            throw new Error(errorMessage);
+          }
+          
+          console.log('[EmailComposer] Sending broadcast to categories:', confirm.clientCategoryIds);
+          const broadcastPayload = {
+            draft_id: draftIdNumber,
+            client_cat_ids: confirm.clientCategoryIds,
+          };
+          console.log('[EmailComposer] Broadcast payload:', broadcastPayload);
+          const broadcastResult = await composerWorkflowService.sendBroadcast(broadcastPayload);
+          console.log('[EmailComposer] Broadcast sent successfully:', broadcastResult);
+        } else {
+          // Campaign mode (normal sending)
+          console.log('[EmailComposer] Sending campaign to categories:', confirm.clientCategoryIds);
+          const campaignPayload = {
+            draft_id: draftIdNumber,
+            client_category_ids: confirm.clientCategoryIds,
+          };
+          console.log('[EmailComposer] Campaign payload:', campaignPayload);
+          const campaignResult = await composerWorkflowService.sendCampaign(campaignPayload);
+          console.log('[EmailComposer] Campaign sent successfully:', campaignResult);
+        }
+      } else {
+        console.warn('[EmailComposer] No recipient categories selected, skipping send');
+      }
+
+      console.log('[EmailComposer] Send completed successfully');
       setSent(true);
-    } catch (error) {
-      console.error("Failed to send newsletter workflow", error);
+    } catch (error: any) {
+      console.error("[EmailComposer] Failed to send newsletter workflow", error);
+      // Extract error message from backend response if available
+      let errorMessage = 'Unknown error';
+      if (error?.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      setSendError(errorMessage);
     } finally {
       setIsSending(false);
     }
@@ -2645,14 +3774,20 @@ export function EmailComposerModal({ onClose, prefilled, templateId }: Props) {
             onClose={handleModalClose}
             onNext={() => setStep("confirm")}
             brandId={brandId ? Number(brandId) : undefined}
-            templateId={templateId}
+            templateId={effectiveTemplateId}
             templateLayout={templateLayout}
+            categories={categories}
             onTemplateLayoutChange={(value) => {
               setTemplateLayout(value);
             }}
+            onSwitchToBlankTemplate={() => setTemplateOverride(0)}
             onRegisterCleanup={(cleanup) => {
               composeCleanupRef.current = cleanup;
             }}
+            onSaveDraft={handleManualSave}
+            isAutoSaving={isAutoSaving}
+            prefilled={prefilled}
+            draftId={currentDraftId ?? undefined}
           />
         ) : (
           <ConfirmStep
@@ -2660,6 +3795,10 @@ export function EmailComposerModal({ onClose, prefilled, templateId }: Props) {
             onChange={(k, v) => setConfirm(f => ({ ...f, [k]: v }))}
             onSend={handleSend}
             sent={sent}
+            categories={categories}
+            isSending={isSending}
+            sendError={sendError}
+            sendVia={brand?.sendVia}
           />
         )}
       </div>

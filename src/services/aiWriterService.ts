@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/useAuthStore';
 export interface AiWriterGeneratePayload {
   brand_id?: number;
   ai_agent_id?: number;
+  draft_id?: number;
   template_id?: number;
   prompt: string;
   ai_tone_id?: number;

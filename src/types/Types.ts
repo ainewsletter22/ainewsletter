@@ -10,6 +10,12 @@ export interface Newsletter {
   opened: string;
   clicked: string;
   status: NewsletterStatus;
+  type?: "campaign" | "broadcast";
+  html?: string;
+  preview?: string | null;
+  from_name?: string | null;
+  footer?: string | null;
+  address?: string;
 }
 
 export interface EmailTemplate {
@@ -20,6 +26,54 @@ export interface EmailTemplate {
 
 export interface EmailDraft {
   id: number;
+  user_id: number;
+  brand_id: number;
+  domain_id: number | null;
+  template_id: number | null;
+  from_name: string | null;
+  head: string | null;
+  preview: string | null;
+  template_layout: string | null; // JSON string of TemplateLayoutBlock[]
+  sections_content: string | null; // JSON string of section_id → HTML mapping
+  removed_sections: string | null; // JSON string of removed section IDs
+  custom_images: string | null; // JSON string of custom images array
+  attachments: string | null; // JSON string of attachments array
+  html: string;
+  footer: string | null;
+  address: string | null;
+  ai_agent_id: number | null;
+  post_every_id: number | null;
+  product_link_id: number | null;
+  headline_id: number | null;
+  ai_goal: string | null;
+  business_type: string | null;
+  stop_post_id: number | null;
+  duration_id: number | null;
+  tone_id: number | null;
+  start_date: string | null;
+  stop_date: string | null;
+  test_email: string | null;
+  status: number;
+  createdAt: string;
+  updatedAt: string;
+  Images: any[];
+  Attachments: Array<{
+    id: number;
+    user_id: number;
+    brand_id: number;
+    campaign_id: number | null;
+    image_url: string;
+    storage_key: string;
+    status: number;
+    createdAt: string;
+    updatedAt: string;
+    draft_id: number;
+  }>;
+  AiGeneratedImages: any[];
+  AiGeneratedAttachments: any[];
+  AiGeneratedCampaignResults: any[];
+  
+  // Computed property for UI display
   title: string;
   thumbnail: string;
 }
@@ -52,10 +106,14 @@ export type SendMethod = "ai" | "scratch" | "template";
 
 export interface AIAgentForm {
   agent: string;
+  agentId: number;
   senderName: string;
   businessType: string;
+  businessTypeId: number;
   goals: string;
+  goalId: number;
   tone: string;
+  toneId: number;
 }
 
 export interface HeadlineItem {
@@ -95,6 +153,9 @@ export interface ComposeForm {
   subject: string;
   preview: string;
   body: string;
+  attachments: ComposerAttachment[];
+  footer: string;
+  address: string;
 }
 
 export interface ComposerAttachment {
@@ -114,6 +175,10 @@ export interface TemplateLayoutBlock {
   imageWidth?: string;
   imageOffsetX?: number;
   placeholder?: string;
+  /** Requirement #4: an image slot (or blank-template image) can link out. */
+  imageLinkUrl?: string;
+  /** Requirement #5: image slot hidden from the preview for this send, without deleting it from the layout. */
+  removed?: boolean;
 }
 
 export interface ConfirmForm {
@@ -121,6 +186,8 @@ export interface ConfirmForm {
   delivery: "now" | "later";
   scheduleDate: string;
   scheduleTime: string;
+  clientCategoryIds: number[];
+  isFromAIFlow?: boolean;
 }
 
 // ─── Client & Folder Types ───────────────────────────────────────────────────
@@ -162,6 +229,7 @@ export interface BrandDomain {
   spf: DNSRecord[];
   dmarc: DNSRecord;
   cnames?: DNSRecord[];
+  brand_id?: number;
 }
 
 export interface SMTPSettings {
@@ -210,11 +278,17 @@ export interface Brand {
   dateCreated: string;
   totalCampaigns: number;
   sendsVia: string;
+  sendVia?: SendVia;
   domains: BrandDomain[];
   smtp: SMTPSettings;
   privacy: PrivacySettings;
   sendingLimit: SendingLimitSettings;
   footer: FooterSettings;
+  accountSuspensionEnabled?: boolean;
+  // Backend footer fields (snake_case with typo)
+  unsuscribe_information?: string;
+  footer_address?: string;
+  newsletter_badge?: boolean;
 }
 
 export interface BrandFormValues {
@@ -224,4 +298,135 @@ export interface BrandFormValues {
   replyToEmail: string;
   resendApiKey?: string;
   logo?: File | string;
+}
+
+// ─── Send Mode Types ───────────────────────────────────────────────────────────
+
+export type SendVia = "broadcast" | "campaign";
+
+export interface BroadcastStatus {
+  id: number;
+  name: string;
+  status: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Broadcast {
+  id: number;
+  user_id: number;
+  brand_id: number;
+  draft_id: number;
+  domain_id: number | null;
+  client_cat_id: number;
+  resend_audience_id: string;
+  resend_broadcast_id: string;
+  broadcast_status_id: number;
+  scheduled_at: string | null;
+  sent_at: string | null;
+  total_recipients: number;
+  delivered_count: number;
+  opened_count: number;
+  clicked_count: number;
+  bounced_count: number;
+  complained_count: number;
+  sent_count: number;
+  delivery_delayed_count: number;
+  suppressed_count: number;
+  failed_count: number;
+  createdAt: string;
+  updatedAt: string;
+  Brand?: Brand;
+  Draft?: EmailDraft;
+  Domain?: BrandDomain;
+  ClientCategory?: {
+    id: number;
+    user_id: number;
+    name: string;
+    description: string;
+    status: number;
+    createdAt: string;
+    updatedAt: string;
+  };
+  BroadcastStatus?: BroadcastStatus;
+  head?: string;
+  html?: string;
+  preview?: string | null;
+  from_name?: string | null;
+  footer?: string | null;
+  address?: string;
+}
+
+export interface Campaign {
+  id: number;
+  user_id: number;
+  brand_id: number;
+  domain_id: number | null;
+  draft_id: number;
+  campaign_goal_id: number | null;
+  ai_tone_id: number | null;
+  head: string;
+  preview: string | null;
+  html: string;
+  footer: string;
+  address: string;
+  template_id: number | null;
+  sent_at: string | null;
+  from_name: string | null;
+  ai_agent_id: number | null;
+  post_every_id: number | null;
+  product_link_id: number | null;
+  headline_id: number | null;
+  ai_goal: string | null;
+  business_type: string | null;
+  stop_post_id: number | null;
+  duration_id: number | null;
+  tone_id: number | null;
+  start_date: string | null;
+  stop_date: string | null;
+  test_email: string | null;
+  total_recipients: number;
+  delivered_count: number;
+  opened_count: number;
+  clicked_count: number;
+  bounced_count: number;
+  complained_count: number;
+  sent_count: number;
+  delivery_delayed_count: number;
+  suppressed_count: number;
+  failed_count: number;
+  status: number;
+  createdAt: string;
+  updatedAt: string;
+  AiTone?: any;
+  AiAgent?: any;
+  PostEvery?: any;
+  ProductLink?: any;
+  Headline?: any;
+  StopPostAfter?: any;
+  Duration?: any;
+  CampaignGoal?: any;
+}
+
+export interface BroadcastSendPayload {
+  draft_id: number;
+  client_cat_ids: number[];
+}
+
+export interface BroadcastSendResult {
+  client_cat_id: number;
+  status: "success" | "failed";
+  broadcast_id?: number;
+  error?: string;
+}
+
+export interface ClientCategoryDeletePayload {
+  client_cat_ids: number[];
+}
+
+export interface ClientCategoryDeleteResult {
+  client_cat_id: number;
+  status: "success" | "failed";
+  resend_contacts_removed: number;
+  resend_audiences_removed: number;
 }

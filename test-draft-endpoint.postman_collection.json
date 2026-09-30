@@ -1,0 +1,36 @@
+{
+	"info": {
+		"name": "Draft API Test",
+		"_postman_id": "draft-api-test-collection",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "your-postman-id"
+	},
+	"item": [
+		{
+			"name": "Test Draft Create",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "JWT YOUR_JWT_TOKEN_HERE"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"brand_id\": 4,\n  \"domain_id\": 9,\n  \"html\": \"<h1>Welcome!</h1><p>This is a test draft.</p>\",\n  \"from_name\": \"Test User\",\n  \"ai_agent_id\": 2,\n  \"ai_goal\": \"Increase conversions\",\n  \"business_type\": \"E-commerce\",\n  \"tone_id\": 3\n}"
+				},
+				"url": {
+					"raw": "https://ai-newsletter-be.onrender.com/api/v1.0/draft/create",
+					"protocol": "https",
+					"host": ["ai-newsletter-be", "onrender", "com"],
+					"path": ["api", "v1.0", "draft", "create"]
+				}
+			}
+		}
+	]
+}

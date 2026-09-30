@@ -52,6 +52,9 @@ export default function ManageClients() {
   const [importSource, setImportSource] = useState<ImportSource>(null);
   const [importCount, setImportCount] = useState(0);
   const [importData, setImportData] = useState<ParsedImportData | null>(null);
+  const [folderError, setFolderError] = useState("");
+  const [clientError, setClientError] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
 
   const fetchFolders = useCallback(async () => {
     try {
@@ -103,6 +106,7 @@ export default function ManageClients() {
   }, [fetchClients, selectedFolder]);
 
   const handleSaveFolder = async (name: string) => {
+    setFolderError("");
     try {
       if (editingFolder) {
         await clientService.updateCategory(editingFolder.id, name, "");
@@ -114,6 +118,9 @@ export default function ManageClients() {
       setEditingFolder(null);
     } catch (error) {
       console.error("Failed to save folder", error);
+      const axiosError = error as { response?: { data?: { message?: string; error?: string } } } | undefined;
+      const serverMessage = axiosError?.response?.data?.message || axiosError?.response?.data?.error;
+      setFolderError(serverMessage || "Failed to save folder. Please try again.");
     }
   };
 
@@ -126,7 +133,7 @@ export default function ManageClients() {
     if (!window.confirm("Are you sure you want to delete this folder?")) return;
     try {
       await clientService.deleteCategory(id);
-      setFolders((prev) => prev.filter((folder) => folder.id !== id));
+      await fetchFolders();
       if (selectedFolder?.id === id) setSelectedFolder(null);
     } catch (error) {
       console.error("Failed to delete folder", error);
@@ -135,6 +142,7 @@ export default function ManageClients() {
  
   const handleAddClient = async (client: Partial<ManagedClient>) => {
     if (!selectedFolder) return;
+    setClientError("");
     try {
       // Step 1: create minimal record (server only accepts business_name on create)
       const createdResp = await clientService.addClientManual({ business_name: client.businessName });
@@ -151,16 +159,20 @@ export default function ManageClients() {
 
       await clientService.updateClient(createdId, updatePayload);
 
-      // Refresh UI
+      // Refresh UI and close modal only on success
       fetchClients(selectedFolder.id);
       setFolders((prev) => prev.map((folder) => (
         folder.id === selectedFolder.id ? { ...folder, totalClients: folder.totalClients + 1 } : folder
       )));
       setSelectedFolder((folder) => folder ? { ...folder, totalClients: folder.totalClients + 1 } : folder);
       setShowAddClient(false);
+      setClientError("");
     } catch (error) {
-      const axiosError = error as { response?: { data?: unknown; status?: number } };
+      const axiosError = error as { response?: { data?: { message?: string; error?: string } } } | undefined;
+      const serverMessage = axiosError?.response?.data?.message || axiosError?.response?.data?.error;
       console.error("Failed to add client", axiosError?.response?.data || error);
+      setClientError(serverMessage || "Failed to add client. Please check your input and try again.");
+      // Don't close modal on error
     }
   };
 
@@ -197,6 +209,7 @@ export default function ManageClients() {
     if (!selectedFolder) return;
     setImportCount(count);
     setImportFlow("success");
+    setIsImporting(false);
     await fetchClients(selectedFolder.id);
     setFolders((prev) => prev.map((folder) => (
       folder.id === selectedFolder.id ? { ...folder, totalClients: folder.totalClients + count } : folder
@@ -204,15 +217,45 @@ export default function ManageClients() {
     setSelectedFolder((folder) => folder ? { ...folder, totalClients: folder.totalClients + count } : folder);
   };
 
-  const handleRunImport = async (rows: string[][], selectedFields: string[]) => {
+  const handleRunImport = async (rows: string[][], selectedFields: string[], editedValues?: Record<number, Record<string, string>>) => {
     if (!selectedFolder) return;
-    const clients = buildClientPayloads(rows, selectedFields as any, importData?.headers);
+    setIsImporting(true);
+    let clients = buildClientPayloads(rows, selectedFields as any, importData?.headers);
+    
+    // Apply manual edits if provided - override the extracted values
+    if (editedValues) {
+      clients = clients.map((client, index) => {
+        const edits = editedValues[index];
+        if (!edits) return client;
+        
+        // Use edited values directly, overriding the auto-detected ones
+        const payload: Record<string, string> = {
+          business_name: edits.fullName || client.business_name,
+        };
+        
+        if (edits.email) payload.email = edits.email;
+        else if (client.email) payload.email = client.email;
+        
+        if (edits.phone) payload.phone = edits.phone;
+        else if (client.phone) payload.phone = client.phone;
+        
+        if (edits.website) payload.website = edits.website;
+        else if (client.website) payload.website = client.website;
+        
+        return payload;
+      });
+    }
+    
     try {
       await clientService.addClientsBatchManual(clients, selectedFolder.id);
+      setIsImporting(false);
       handleImportSuccess(clients.length);
     } catch (error) {
-      console.error("Failed to import contacts", error);
-      alert("Failed to import contacts. Please try again.");
+      setIsImporting(false);
+      const axiosError = error as { response?: { data?: { message?: string; error?: string } } } | undefined;
+      const serverMessage = axiosError?.response?.data?.message || axiosError?.response?.data?.error;
+      console.error("Failed to import contacts", axiosError?.response?.data || error);
+      alert(`Failed to import contacts: ${serverMessage || "Please check your data and try again."}`);
     }
   };
  
@@ -226,7 +269,11 @@ export default function ManageClients() {
           clients={clients}
           onBack={() => setSelectedFolder(null)}
           onAddClient={() => setShowAddClient(true)}
-          onImport={() => setImportFlow("step1")}
+          onImport={() => {
+            setImportFlow("step1");
+            setIsImporting(true);
+          }}
+          isImporting={isImporting}
           onDeleteClient={handleDeleteClient}
           onUpdateClient={handleUpdateClient}
         />
@@ -245,17 +292,29 @@ export default function ManageClients() {
           onClose={() => {
             setShowAddFolder(false);
             setEditingFolder(null);
+            setFolderError("");
           }}
           onAdd={handleSaveFolder}
+          error={folderError}
         />
       )}
-      {showAddClient && <AddClientModal onClose={() => setShowAddClient(false)} onAdd={handleAddClient} />}
+      {showAddClient && (
+        <AddClientModal
+          onClose={() => {
+            setShowAddClient(false);
+            setClientError("");
+          }}
+          onAdd={handleAddClient}
+          error={clientError}
+        />
+      )}
       {importFlow === "step1" && (
         <ImportStep1
           onClose={() => {
             setImportFlow("idle");
             setImportSource(null);
             setImportData(null);
+            setIsImporting(false);
           }}
           onNext={(step) => {
             setImportSource(step);
@@ -269,8 +328,12 @@ export default function ManageClients() {
             setImportFlow("idle");
             setImportSource(null);
             setImportData(null);
+            setIsImporting(false);
           }}
-          onSuccess={(data) => handleImportStep(data, "file")}
+          onSuccess={(data) => {
+            setIsImporting(false);
+            handleImportStep(data, "file");
+          }}
         />
       )}
       {importFlow === "paste" && (
@@ -279,8 +342,12 @@ export default function ManageClients() {
             setImportFlow("idle");
             setImportSource(null);
             setImportData(null);
+            setIsImporting(false);
           }}
-          onSuccess={(data) => handleImportStep(data, "paste")}
+          onSuccess={(data) => {
+            setIsImporting(false);
+            handleImportStep(data, "paste");
+          }}
         />
       )}
       {importFlow === "review" && importData && (
@@ -289,15 +356,21 @@ export default function ManageClients() {
             setImportFlow("idle");
             setImportSource(null);
             setImportData(null);
+            setIsImporting(false);
           }}
           onBack={() => {
             setImportFlow(importSource ?? "step1");
+            setIsImporting(false);
           }}
           data={importData}
-          onImport={handleRunImport}
+          onImport={(rows, selectedFields, editedValues) => handleRunImport(rows, selectedFields, editedValues)}
+          isImporting={isImporting}
         />
       )}
-      {importFlow === "success" && <ImportSuccessModal count={importCount} onClose={() => setImportFlow("idle")} />}
+      {importFlow === "success" && <ImportSuccessModal count={importCount} onClose={() => {
+        setImportFlow("idle");
+        setIsImporting(false);
+      }} />}
     </>
   );
 }

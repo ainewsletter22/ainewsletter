@@ -1,70 +1,116 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import type { EmailDraft } from "../../types/Types";
 import searchIcon from "../../assets/searchIconBAW.svg";
+import { draftService } from "../../services/draftService";
+import { EmailTemplateSnapshot } from "../../components/Emailtemplatesnapshot";
+import { parseAttachmentCount, restoreDraftLayout } from "../../utils/Draftlayout";
 
 interface Props {
   onSelectDraft: (d: EmailDraft) => void;
+  brandId?: number;
 }
 
-function DraftCard({ draft, onSelect, onView, onDelete }: {
+export interface DraftsTabRef {
+  refresh: () => void;
+}
+
+// The width (in px) EmailTemplateSnapshot's Tailwind classes (h-56, grid
+// gaps, etc.) are effectively authored for -- it's the same effective content
+// width EmailComposerModal's EmailPreviewPane renders templates at
+// (max-w-2xl minus its px-6 padding). The thumbnail renders the snapshot at
+// this real size, then scales the whole thing down to fit the card -- so
+// what you see in the card is a true miniature of the real layout, not a
+// separate approximation of it.
+const SNAPSHOT_DESIGN_WIDTH = 624;
+
+function DraftPreviewThumbnail({ draft }: { draft: EmailDraft }) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0.5);
+
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+
+    const update = () => {
+      if (el.clientWidth > 0) setScale(el.clientWidth / SNAPSHOT_DESIGN_WIDTH);
+    };
+    update();
+
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const blocks = restoreDraftLayout(draft);
+  const attachmentCount = parseAttachmentCount(draft.attachments);
+
+  return (
+    <div ref={wrapperRef} className="relative h-40 w-full overflow-hidden bg-gray-50">
+      {!blocks && !draft.html ? (
+        <div className="flex h-full items-center justify-center">
+          <p className="text-xs text-gray-400">Empty draft</p>
+        </div>
+      ) : (
+        <div
+          className="pointer-events-none origin-top-left"
+          style={{ width: SNAPSHOT_DESIGN_WIDTH, transform: `scale(${scale})` }}
+        >
+          <EmailTemplateSnapshot
+            templateId={draft.template_id ?? undefined}
+            blocks={blocks}
+            html={draft.html}
+            attachmentCount={attachmentCount}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DraftCard({ draft, onOpen, onDelete }: {
   draft: EmailDraft;
-  onSelect: () => void;
-  onView: () => void;
+  onOpen: () => void;
   onDelete: () => void;
 }) {
   const [hover, setHover] = useState(false);
 
+  // Generate a title from the draft data
+  const title = draft.head || draft.preview || "no subject yet";
+
+  // Format the last updated date
+  const lastUpdated = draft.updatedAt ? new Date(draft.updatedAt).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  }) : '';
+
   return (
     <div
-      className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer hover:border-blue-200"
+      className="bg-white border border-gray-100 rounded-2xl overflow-hidden hover:shadow-md transition-all cursor-pointer hover:border-blue-200"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onClick={onOpen}
     >
       <div className="relative">
-        {/* Draft preview card */}
-        <div className="p-4 bg-gray-50 min-h-40">
-          {/* Mini email preview */}
-          <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
-            <p className="text-xs text-gray-700 font-medium mb-2">🤌 The Lemon Squeezy Slack is here, and you're invited to join!</p>
-            <div className="rounded-lg overflow-hidden" style={{ background: "linear-gradient(135deg, #1e1b4b 0%, #7c3aed 50%, #db2777 100%)" }}>
-              <div className="flex">
-                <div className="bg-purple-900/80 p-2 w-1/3 space-y-1">
-                  {[1, 2, 3, 4].map(i => (
-                    <div key={i} className="h-1.5 bg-white/30 rounded" style={{ width: `${60 + i * 8}%` }} />
-                  ))}
-                </div>
-                <div className="flex-1 p-2 space-y-1">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className="h-1.5 bg-white/20 rounded" />
-                  ))}
-                  <div className="h-6 bg-pink-400/60 rounded mt-1" />
-                </div>
-              </div>
-            </div>
+        {/* Draft preview card - true scaled-down snapshot of the actual draft */}
+        <div className="p-4 bg-gray-50">
+          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+            <DraftPreviewThumbnail draft={draft} />
           </div>
         </div>
 
         {/* Hover actions */}
         {hover && (
           <div className="absolute inset-0 bg-white/70 backdrop-blur-sm flex items-center justify-center gap-3">
-            <button onClick={onSelect} className="flex flex-col items-center gap-1">
+            <button onClick={(e) => { e.stopPropagation(); onOpen(); }} className="flex flex-col items-center gap-1">
               <div className="w-10 h-10 rounded-full bg-white shadow-md flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
               </div>
-              <span className="text-xs font-medium text-gray-700">Select</span>
+              <span className="text-xs font-medium text-gray-700">Open</span>
             </button>
-            <button onClick={onView} className="flex flex-col items-center gap-1">
-              <div className="w-10 h-10 rounded-full bg-white shadow-md flex items-center justify-center">
-                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
-              </div>
-              <span className="text-xs font-medium text-gray-700">View</span>
-            </button>
-            <button onClick={onDelete} className="flex flex-col items-center gap-1">
+            <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="flex flex-col items-center gap-1">
               <div className="w-10 h-10 rounded-full bg-white shadow-md flex items-center justify-center">
                 <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -77,17 +123,64 @@ function DraftCard({ draft, onSelect, onView, onDelete }: {
       </div>
 
       <div className="px-4 py-3">
-        <p className="text-sm font-medium text-gray-800 truncate">{draft.title}</p>
+        <p className="text-sm font-medium text-gray-800 truncate">{title}</p>
+        {lastUpdated && (
+          <p className="text-xs text-gray-400 mt-1">Updated {lastUpdated}</p>
+        )}
       </div>
     </div>
   );
 }
 
-export function DraftsTab({ onSelectDraft }: Props) {
+export const DraftsTab = forwardRef<DraftsTabRef, Props>(({ onSelectDraft, brandId }, ref) => {
   const [drafts, setDrafts] = useState<EmailDraft[]>([]);
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const fetchDrafts = async () => {
+    if (!brandId) return;
+    setLoading(true);
+    try {
+      const apiDrafts = await draftService.getDraftsByBrand(brandId);
+      // Transform API drafts to EmailDraft format with computed properties
+      const transformedDrafts: EmailDraft[] = apiDrafts.map(draft => ({
+        ...draft,
+        title: draft.head || draft.preview || `Draft ${draft.id}`,
+        thumbnail: draft.html ? draft.html.substring(0, 100) : '',
+      }));
+      // Sort by updated date (newest first)
+      transformedDrafts.sort((a, b) => {
+        const dateA = new Date(a.updatedAt || 0).getTime();
+        const dateB = new Date(b.updatedAt || 0).getTime();
+        return dateB - dateA;
+      });
+      setDrafts(transformedDrafts);
+    } catch (error) {
+      console.error('Failed to fetch drafts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDrafts();
+  }, [brandId]);
+
+  // Expose refresh function via ref for parent to call
+  useImperativeHandle(ref, () => ({
+    refresh: fetchDrafts
+  }));
 
   const filtered = drafts.filter(d => d.title.toLowerCase().includes(search.toLowerCase()));
+
+  const handleDelete = async (draftId: number) => {
+    try {
+      await draftService.deleteDraft(draftId);
+      setDrafts(prev => prev.filter(x => x.id !== draftId));
+    } catch (error) {
+      console.error('Failed to delete draft:', error);
+    }
+  };
 
   return (
     <div>
@@ -111,10 +204,14 @@ export function DraftsTab({ onSelectDraft }: Props) {
       </div>
 
       {/* Empty state */}
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
+          <p className="text-sm text-gray-500">Loading drafts...</p>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
           <h3 className="text-lg font-semibold text-gray-800">No drafts yet</h3>
-          <p className="text-sm text-gray-500 mt-2">Drafts will appear here once the backend data is available.</p>
+          <p className="text-sm text-gray-500 mt-2">Create your first email draft to get started.</p>
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-4">
@@ -122,13 +219,14 @@ export function DraftsTab({ onSelectDraft }: Props) {
             <DraftCard
               key={d.id}
               draft={d}
-              onSelect={() => onSelectDraft(d)}
-              onView={() => {}}
-              onDelete={() => setDrafts(prev => prev.filter(x => x.id !== d.id))}
+              onOpen={() => onSelectDraft(d)}
+              onDelete={() => handleDelete(d.id)}
             />
           ))}
         </div>
       )}
     </div>
   );
-}
+});
+
+DraftsTab.displayName = 'DraftsTab';

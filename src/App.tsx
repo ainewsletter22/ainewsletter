@@ -9,6 +9,8 @@ import SendAINewsletterPage from './pages/protected/Sendainewsletterpage';
 import ConfirmEmail from './pages/protected/ConfirmEmail';
 import SearchHistory from './pages/protected/SearchHistory';
 import BrandsPage from './pages/protected/BrandsPage';
+import AccountReviewPage from './pages/protected/AccountReviewPage';
+import SubmissionReviewPage from './pages/protected/SubmissionReviewPage';
 import ResetPassword from './pages/public/ResetPassword';
 import ProtectedRoute from './components/ProtectedRoute';
 import PublicRoute from './components/PublicRoute';
@@ -52,6 +54,8 @@ function App() {
           <Route path="/news-letter" element={<Navigate to="/news-letter/brands" replace />} />
           <Route path="/news-letter/brands" element={<BrandsPage />} />
           <Route path="/news-letter/brands/:brandId" element={<SendAINewsletterPage />} />
+          <Route path="/account-review" element={<AccountReviewPage />} />
+          <Route path="/submission-review" element={<SubmissionReviewPage />} />
           <Route path="/search-history" element={<SearchHistory />} />
         </Route>
 

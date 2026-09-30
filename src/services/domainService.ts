@@ -42,6 +42,7 @@ function normalizeDomain(raw: any): BrandDomain {
     spf: spfItems as any[],
     dmarc: dmarcItem ?? { type: 'TXT', name: '', content: '', ttl: 'Auto' },
     cnames: cnameItems as any[],
+    brand_id: raw.brand_id, // Add brand_id for filtering
   } as BrandDomain;
 }
 
@@ -130,6 +131,10 @@ export const domainService = {
       enable_open_tracking: payload.enable_open_tracking ?? false,
       enable_click_tracking: payload.enable_click_tracking ?? false,
     };
+
+    console.log('[DomainService] Creating domain for brand_id:', payload.brand_id);
+    console.log('[DomainService] Domain create payload:', body);
+    console.log('[DomainService] Note: Backend will use brand\'s existing resend_api_key');
 
     const response = await apiClient.post('/domain/create', body);
     return normalizeDomain(response.data.data);

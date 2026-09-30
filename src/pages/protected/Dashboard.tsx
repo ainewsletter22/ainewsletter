@@ -25,8 +25,13 @@ export default function Dashboard() {
     let isMounted = true;
     const fetchStats = async () => {
       try {
-        const data = await clientService.getStats();
-        if (isMounted) setStats(data);
+        const categories = await clientService.getCategories();
+        const clientsCounts = await Promise.all(
+          categories.map(cat => clientService.getSavedClients(cat.id))
+        );
+        const totalClients = clientsCounts.reduce((sum, clients) => sum + clients.length, 0);
+        const contacted = await clientService.getStats();
+        if (isMounted) setStats({ total: totalClients, contacted: contacted.contacted });
       } catch (error) {
         console.error("Failed to fetch dashboard stats", error);
       }

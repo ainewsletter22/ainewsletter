@@ -1,5 +1,5 @@
 import { useRef, useState, type ChangeEvent } from "react";
-import type { BrandFormValues } from "../../types/Types";
+import type { BrandFormValues, BrandDomain } from "../../types/Types";
 import { Btn } from "../Modalshells";
 
 interface Props {
@@ -8,9 +8,10 @@ interface Props {
   onSave: (values: BrandFormValues) => void;
   saving?: boolean;
   saveLabel?: string;
+  domains?: BrandDomain[];
 }
 
-function BrandIdentityForm({ initial, onCancel, onSave, saving, saveLabel = "Save Changes" }: Props) {
+function BrandIdentityForm({ initial, onCancel, onSave, saving, saveLabel = "Save Changes", domains = [] }: Props) {
   const [values, setValues] = useState<BrandFormValues>(initial);
   const [preview, setPreview] = useState<string | undefined>(typeof initial.logo === 'string' ? initial.logo : undefined);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -39,11 +40,22 @@ function BrandIdentityForm({ initial, onCancel, onSave, saving, saveLabel = "Sav
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">From name</label>
-          <input
+          <select
             value={values.fromName}
-            onChange={set("fromName")}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+            onChange={(e) => setValues(v => ({ ...v, fromName: e.target.value }))}
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="">Select a verified domain</option>
+            {domains.filter(d => d.status === "Verified").map(domain => (
+              <option key={domain.id} value={domain.name}>
+                {domain.name}
+              </option>
+            ))}
+            {/* Include current value if it's not in the verified domains list */}
+            {values.fromName && !domains.filter(d => d.status === "Verified").some(d => d.name === values.fromName) && (
+              <option value={values.fromName}>{values.fromName}</option>
+            )}
+          </select>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">From email</label>

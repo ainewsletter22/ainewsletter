@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Logo from "./Logo";
 import Dashboard from "../assets/dashboardIcon.png";
@@ -10,6 +10,7 @@ import clientsIconActive from "../assets/manageClientsActive.svg";
 import sendIcon from "../assets/sendIcon.png";
 import { useAuthStore } from "../store/useAuthStore";
 import { authService } from "../services/authService";
+import { getAccountReviewRequired } from "../utils/accountReview";
 
 
 export default function DashboardHeader() {
@@ -17,6 +18,14 @@ export default function DashboardHeader() {
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [reviewRequired, setReviewRequired] = useState(() => getAccountReviewRequired());
+
+  useEffect(() => {
+    const syncState = () => setReviewRequired(getAccountReviewRequired());
+    syncState();
+    window.addEventListener("ingage-account-review-change", syncState);
+    return () => window.removeEventListener("ingage-account-review-change", syncState);
+  }, []);
 
 
   const navItems = [
@@ -35,9 +44,28 @@ export default function DashboardHeader() {
     }
   };
 
+  // Shown on every screen, the review page included — the person can't tell
+  // the account is reactivated until their review is actually approved.
+  const showReviewBanner = reviewRequired;
+
   return (
-    <header className="w-full bg-white border-b border-gray-100 px-4 lg:px-6 py-4 lg:py-7 flex flex-col lg:flex-row lg:items-center justify-between sticky top-0 z-40 gap-4 lg:gap-0">
-      <div className="flex items-center justify-between w-full lg:w-auto">
+    <>
+      {showReviewBanner && (
+        <div className="w-full border-b border-red-100 bg-red-50 px-4 py-2 text-center text-sm text-red-700">
+          <span aria-hidden className="mr-1">⚠</span>
+          Your Account is temporarily suspended.{" "}
+          <button
+            type="button"
+            onClick={() => navigate("/account-review")}
+            className="font-semibold underline underline-offset-2 hover:text-red-800"
+          >
+            Provide more information to activate it
+          </button>
+        </div>
+      )}
+
+      <header className="w-full bg-white border-b border-gray-100 px-4 lg:px-6 py-4 lg:py-7 flex flex-col lg:flex-row lg:items-center justify-between sticky top-0 z-40 gap-4 lg:gap-0">
+        <div className="flex items-center justify-between w-full lg:w-auto">
         {/* Logo */}
         <div className="flex items-center">
           <Logo />
@@ -127,7 +155,8 @@ export default function DashboardHeader() {
             <path d="M3 5l4 4 4-4" stroke="#9CA3AF" strokeWidth="1.4" strokeLinecap="round" />
           </svg>
         </button>
-      </div>
-    </header>
+        </div>
+      </header>
+    </>
   );
 }

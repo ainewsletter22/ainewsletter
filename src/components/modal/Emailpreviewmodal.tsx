@@ -1,58 +1,83 @@
+import type { Newsletter } from "../../types/Types";
+
 interface Props {
+  newsletter?: Newsletter;
   onClose: () => void;
+  loading?: boolean;
 }
 
-export function EmailPreviewModal({ onClose }: Props) {
+const RICH_TEXT_DISPLAY_CLASS = "[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1 [&_blockquote]:border-l-4 [&_blockquote]:border-slate-200 [&_blockquote]:pl-3 [&_blockquote]:text-slate-500";
+
+function normalizeRichTextContent(html: string | null | undefined): string {
+  if (!html) return "";
+  return html;
+}
+
+function getInitialLetter(name: string): string {
+  return name?.charAt(0)?.toUpperCase() || "A";
+}
+
+export function EmailPreviewModal({ newsletter, onClose, loading = false }: Props) {
+  const senderName = newsletter?.from_name || "Your name";
+  const senderEmail = "your@email.com";
+  const recipient = "recipient@email.com";
+  const subject = newsletter?.title || "(no subject)";
+  const htmlContent = newsletter?.html || newsletter?.preview || "";
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
-        {/* Email content */}
-        <div className="p-8 text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">
-            🤌 My Summer Slash Design Package<br />Is Here And You'reInvited To Join!
-          </h2>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto bg-[#f2f6fc] px-6 py-8">
+            <div className="mx-auto max-w-2xl rounded-xl border border-gray-200 bg-white shadow-sm">
+              <div className="border-b border-gray-100 px-6 py-4">
+                <h1 className="text-xl text-gray-900" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
+                  {subject}
+                </h1>
+              </div>
 
-          <ul className="text-sm text-gray-600 text-left list-disc list-inside space-y-2 mb-6">
-            <li>Research: You can use the right-side search to find stuff, highlight it, and then paste it here.</li>
-            <li>Write Assist: Use the keyboard shortcuts Ctrl + Space (Windows) or Ctrl + Shift + Spacebar to get content suggestions when right-clicking (Mac).</li>
-            <li>To paraphrase a passage of text, highlight it and use the right-click menu.</li>
-          </ul>
+              <div className="flex items-start gap-3 px-6 py-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-500 text-sm font-bold text-white">
+                  {getInitialLetter(senderName)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="text-sm font-semibold text-gray-900">{senderName}</span>
+                      <span className="ml-2 text-sm text-gray-500">&lt;{senderEmail}&gt;</span>
+                    </div>
+                    <span className="shrink-0 text-xs text-gray-400">now</span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-gray-500">to {recipient}</p>
+                </div>
+              </div>
 
-          {/* Placeholder image */}
-          <div className="rounded-2xl overflow-hidden mb-6 mx-auto max-w-md" style={{ background: "linear-gradient(135deg, #f97316, #a855f7, #ec4899, #eab308)" }}>
-            <div className="h-48 flex items-center justify-center text-white text-4xl opacity-80">
-              🎨
+              <div
+                className={`px-6 pb-6 text-[15px] leading-relaxed text-gray-800 ${RICH_TEXT_DISPLAY_CLASS}`}
+                style={{ fontFamily: "Arial, Helvetica, sans-serif", whiteSpace: "pre-wrap" }}
+                dangerouslySetInnerHTML={{
+                  __html: `<style>img{display:inline-block;vertical-align:middle;border-radius:8px;cursor:pointer;margin:0 4px;}</style>` + (normalizeRichTextContent(htmlContent) || '<p style="color:#9CA3AF;">This email is empty.</p>'),
+                }}
+              />
+
+              {newsletter?.footer && (
+                <div className="border-t border-gray-100 px-6 py-4">
+                  <p className="text-xs text-gray-500 whitespace-pre-line">{newsletter.footer}</p>
+                  {newsletter?.address && (
+                    <p className="mt-1 text-xs text-gray-400 whitespace-pre-line">{newsletter.address}</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
-
-          <ul className="text-sm text-gray-600 text-left list-disc list-inside space-y-2 mb-6">
-            <li>Research: You can use the right-side search to find stuff, highlight it, and then paste it here.</li>
-            <li>Write Assist: Use the keyboard shortcuts Ctrl + Space (Windows) or Ctrl + Shift + Spacebar to get content suggestions when right-clicking (Mac).</li>
-            <li>To paraphrase a passage of text, highlight it and use the right-click menu.</li>
-          </ul>
-
-          <a href="#" className="text-blue-600 font-medium text-sm hover:underline">Click here To Learn More</a>
-        </div>
-
-        {/* Footer */}
-        <div className="bg-blue-700 px-8 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-white">
-            <div className="w-7 h-7 bg-white/20 rounded-lg flex items-center justify-center">
-              <svg viewBox="0 0 20 20" className="w-4 h-4 text-white" fill="currentColor">
-                <path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V5z"/>
-              </svg>
-            </div>
-            <span className="text-sm font-semibold">Ai Newsletter</span>
-          </div>
-          <div className="text-center">
-            <p className="text-blue-200 text-xs">1201 North Orange Street Wilmington</p>
-            <p className="text-blue-200 text-xs">Delaware 19801 USA.</p>
-          </div>
-          <button className="text-blue-200 hover:text-white text-xs underline">Unsubscribe From My Newsletter</button>
-        </div>
+        )}
       </div>
     </div>
   );
