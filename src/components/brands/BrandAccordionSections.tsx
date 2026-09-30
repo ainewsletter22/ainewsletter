@@ -204,6 +204,8 @@ export function AddDomainSection({ domains, regions, onAddDomain, onDeleteDomain
     }
   }, [domains, step]);
 
+  console.log(setPendingDomain)
+
   // Returns a plain ISO country code (e.g. "US") for a given region label,
   // or null if nothing matched — FlagIcon renders a globe icon for null.
   const findRegionIsoCode = (label: string): string | null => {

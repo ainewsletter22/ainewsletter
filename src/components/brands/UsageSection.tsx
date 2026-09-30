@@ -184,7 +184,7 @@ export function UsageSection({ brandId, sendVia, onSendViaChange, onUpgrade }: U
         action={
           <button
             onClick={() => onUpgrade("marketing")}
-            className="rounded-lg bg-gradient-to-r from-pink-500 to-purple-500 px-4 py-2 text-xs font-semibold text-white hover:shadow-md transition-shadow"
+            className="rounded-lg bg-linear-to-r from-pink-500 to-purple-500 px-4 py-2 text-xs font-semibold text-white hover:shadow-md transition-shadow"
           >
             Upgrade
           </button>

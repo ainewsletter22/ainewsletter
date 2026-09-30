@@ -494,7 +494,7 @@ export function ViewReportModal({ newsletter, onClose }: Props) {
                     </div>
 
                     {chartData.length === 0 ? (
-                      <div className="h-[230px] flex items-center justify-center text-sm text-gray-400">
+                      <div className="h-57.5 flex items-center justify-center text-sm text-gray-400">
                         No data for the selected range.
                       </div>
                     ) : (
@@ -663,7 +663,7 @@ function ActivityDetailModal({ title, rows, onClose }: { title: string; rows: Ac
   const filtered = rows.filter(r => r.email.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 px-4" onClick={onClose}>
+    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/30 px-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <h4 className="text-sm font-semibold text-gray-800">{title}</h4>
@@ -792,7 +792,7 @@ function InfoRow({ label, value, onCopy }: { label: string; value: string; onCop
 function StatusPill({ tone, label, pct }: { tone: "red" | "gray"; label: string; count: number; pct: number }) {
   const red = tone === "red";
   return (
-    <div className="flex items-center gap-2 bg-white rounded-full pl-3 pr-4 py-2 min-w-[190px]">
+    <div className="flex items-center gap-2 bg-white rounded-full pl-3 pr-4 py-2 min-w-47.5">
       <span className={`w-5 h-5 rounded-full flex items-center justify-center ${red ? "bg-red-200" : "bg-gray-200"}`}>
         <span className={`w-2.5 h-2.5 rounded-full ${red ? "bg-red-400" : "bg-gray-300"}`} />
       </span>
@@ -822,7 +822,7 @@ function PickerField({
     <div className="flex items-center h-10 bg-[#f1f1f1] border border-gray-300 rounded-md text-sm text-gray-700">
       <div className="relative flex items-center gap-2 pl-3 pr-2 h-full">
         {kind === "date" ? <CalendarIcon /> : <ClockIcon />}
-        <span className="min-w-[56px]">{display || "--"}</span>
+        <span className="min-w-14">{display || "--"}</span>
         <input
           ref={inputRef}
           type={kind}

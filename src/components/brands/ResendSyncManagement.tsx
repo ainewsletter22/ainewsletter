@@ -41,7 +41,7 @@ export function ResendSyncManagement({ brandId: _brandId, disabled = false }: Pr
 
     try {
       const result = await broadcastService.deleteClientCategoriesFromResend(selectedCategories);
-      
+      console.log(result)
       setMessage({
         type: "success",
         text: `Successfully removed synced data for ${selectedCategories.length} categories from Resend`,

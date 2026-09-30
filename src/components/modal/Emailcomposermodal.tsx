@@ -20,7 +20,6 @@ import addFile from "../../assets/addFile.png"
 import addImage from "../../assets/addImage.png"
 import aiWriter from "../../assets/aiWriter.png"
 import aiWriterBlue from "../../assets/aiWriterBlue.png"
-import logo from "../../assets/mainLogo.png"
 
 // ─── Editor engine ────────────────────────────────────────────────────────
 // The editor is TipTap (see ./composer-tiptap), not Quill. Quill was removed

@@ -9,13 +9,13 @@ export default function SubmissionReviewPage() {
       <DashboardHeader />
       <div className="min-h-screen w-full bg-[#f0f1f5] flex justify-center">
         {/* White content column */}
-        <main className="w-full max-w-[773px] min-h-screen bg-white px-4 pt-11 flex flex-col items-center">
+        <main className="w-full max-w-193.25 min-h-screen bg-white px-4 pt-11 flex flex-col items-center">
         {/* Confirmation card */}
         <section
           role="status"
-          className="w-full max-w-[498px] rounded-3xl border border-gray-300 px-6 pt-4 pb-8 flex flex-col items-center text-center"
+          className="w-full max-w-124.5 rounded-3xl border border-gray-300 px-6 pt-4 pb-8 flex flex-col items-center text-center"
         >
-          <span className="w-[30px] h-[30px] rounded-full bg-green-200 flex items-center justify-center">
+          <span className="w-7.5 h-7.5 rounded-full bg-green-200 flex items-center justify-center">
             <svg
               width="18"
               height="18"
@@ -35,7 +35,7 @@ export default function SubmissionReviewPage() {
             Thanks! We're reviewing your submission
           </h1>
 
-          <p className="mt-1 max-w-[360px] text-xs leading-[15px] text-gray-500">
+          <p className="mt-1 max-w-90 text-xs leading-3.75 text-gray-500">
             We'll review the information you provided and reply by email. Most reviews are
             completed within one business day.
           </p>

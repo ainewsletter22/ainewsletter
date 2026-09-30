@@ -1,0 +1,59 @@
+{
+    "info": {
+        "name": "Domain API Test",
+        "_postman_id": "domain-api-test-collection",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "_exporter_id": "your-postman-id"
+    },
+    "item": [{
+            "name": "Test Domain Create (without resend_api_key)",
+            "request": {
+                "method": "POST",
+                "header": [{
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Authorization",
+                        "value": "JWT YOUR_JWT_TOKEN_HERE"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\"brand_id\": 4, \"name\": \"test.example.com\", \"region_id\": 3, \"enable_open_tracking\": false, \"enable_click_tracking\": false}"
+                },
+                "url": {
+                    "raw": "https://ai-newsletter-be.onrender.com/api/v1.0/domain/create",
+                    "protocol": "https",
+                    "host": ["ai-newsletter-be", "onrender", "com"],
+                    "path": ["api", "v1.0", "domain", "create"]
+                }
+            }
+        },
+        {
+            "name": "Test Domain Create (with resend_api_key)",
+            "request": {
+                "method": "POST",
+                "header": [{
+                        "key": "Content-Type",
+                        "value": "application/json"
+                    },
+                    {
+                        "key": "Authorization",
+                        "value": "JWT YOUR_JWT_TOKEN_HERE"
+                    }
+                ],
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\"brand_id\": 4, \"name\": \"test.example.com\", \"region_id\": 3, \"enable_open_tracking\": false, \"enable_click_tracking\": false, \"resend_api_key\": \"re_WtKgQuR4_3AzKiToo7eeypUGWmh7otvpx\"}"
+                },
+                "url": {
+                    "raw": "https://ai-newsletter-be.onrender.com/api/v1.0/domain/create",
+                    "protocol": "https",
+                    "host": ["ai-newsletter-be", "onrender", "com"],
+                    "path": ["api", "v1.0", "domain", "create"]
+                }
+            }
+        }
+    ]
+}
