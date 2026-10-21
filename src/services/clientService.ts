@@ -211,6 +211,11 @@ export const clientService = {
         return unwrapList<SavedClientRecord>(response.data.data);
     },
 
+    async getClients() {
+        const response = await apiClient.get("clients/list");
+
+        return response.data.data;
+    },
     async deleteClient(id: number | string) {
         return apiClient.delete(`/clients/delete/${id}`);
     },

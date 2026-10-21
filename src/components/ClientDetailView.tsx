@@ -16,296 +16,588 @@ import EditClientModal from "./modal/EditClientModal";
 // type ImportFlow = "idle" | "step1" | "file" | "paste" | "success";
 
 interface Folder {
-  id: number;
-  name: string;
-  totalClients: number;
-  createdDate: string;
+    id: number;
+    name: string;
+    totalClients: number;
+    createdDate: string;
 }
 
 interface Client {
-  id: number;
-  businessName: string;
-  email: string;
-  phone?: string;
-  website?: string;
-  gmb?: string;
-  facebook?: string;
-  twitter?: string;
-  instagram?: string;
-  yelp?: string;
-  group: "Contacted" | "Not Contacted";
-  emailsSent: number;
+    id: number;
+    businessName: string;
+    email: string;
+    phone?: string;
+    website?: string;
+    gmb?: string;
+    facebook?: string;
+    twitter?: string;
+    instagram?: string;
+    yelp?: string;
+    group: "Contacted" | "Not Contacted";
+    emailsSent: number;
 }
 
 function ClientDetailView({
-  folder, clients, onBack, onAddClient, onImport, onDeleteClient, onUpdateClient, isImporting = false,
+    folder,
+    clients,
+    onBack,
+    onAddClient,
+    onImport,
+    onDeleteClient,
+    onUpdateClient,
+    isImporting = false,
 }: {
-  folder: Folder;
-  clients: Client[];
-  onBack: () => void;
-  onAddClient: () => void;
-  onImport: () => void;
-  onDeleteClient: (id: number) => void;
-  onUpdateClient: (id: number, payload: ClientUpdatePayload) => Promise<void>;
-  isImporting?: boolean;
+    folder: Folder;
+    clients: Client[];
+    onBack: () => void;
+    onAddClient: () => void;
+    onImport: () => void;
+    onDeleteClient: (id: number) => void;
+    onUpdateClient: (id: number, payload: ClientUpdatePayload) => Promise<void>;
+    isImporting?: boolean;
 }) {
-  const [activeTab, setActiveTab] = useState<"clients" | "emails">("clients");
-  const [search, setSearch] = useState("");
-  const [show, setShow] = useState(10);
-  const [page, setPage] = useState(1);
-  const [showExportOptions, setShowExportOptions] = useState(false);
-  const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const exportRef = useRef<HTMLDivElement>(null);
+    const [activeTab, setActiveTab] = useState<"clients" | "emails">("clients");
+    const [search, setSearch] = useState("");
+    const [show, setShow] = useState(10);
+    const [page, setPage] = useState(1);
+    const [showExportOptions, setShowExportOptions] = useState(false);
+    const [editingClient, setEditingClient] = useState<Client | null>(null);
+    const exportRef = useRef<HTMLDivElement>(null);
+    const clientsWithEmailCount = clients.filter((c) => c.email).length;
+    const isClientsLoading = clients.length < folder.totalClients;
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (exportRef.current && !exportRef.current.contains(e.target as Node)) setShowExportOptions(false);
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (
+                exportRef.current &&
+                !exportRef.current.contains(e.target as Node)
+            )
+                setShowExportOptions(false);
+        };
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
+    }, []);
+
+    const handleExport = async (format: "xlsx" | "csv" | "xml" | "json") => {
+        try {
+            const data = await clientService.exportClients(format);
+            const url = window.URL.createObjectURL(new Blob([data]));
+            const link = document.createElement("a");
+            link.href = url;
+            link.setAttribute(
+                "download",
+                `clients_export_${folder.name}.${format}`,
+            );
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode?.removeChild(link);
+            setShowExportOptions(false);
+        } catch (error) {
+            console.error("Export failed", error);
+            alert("Failed to export contacts. Please try again.");
+        }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
 
-  const handleExport = async (format: 'xlsx' | 'csv' | 'xml' | 'json') => {
-    try {
-      const data = await clientService.exportClients(format);
-      const url = window.URL.createObjectURL(new Blob([data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `clients_export_${folder.name}.${format}`);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode?.removeChild(link);
-      setShowExportOptions(false);
-    } catch (error) {
-      console.error("Export failed", error);
-      alert("Failed to export contacts. Please try again.");
-    }
-  };
- 
-  const emailsSentCount = clients.filter(c => c.group === "Contacted").length;
-  const filtered = clients.filter(c =>
-    c.businessName.toLowerCase().includes(search.toLowerCase()) ||
-    c.email.toLowerCase().includes(search.toLowerCase())
-  );
-  const totalPages = Math.ceil(filtered.length / show);
-  const paginated = filtered.slice((page - 1) * show, page * show);
- 
-  return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Manage Clients</h1>
-          <p className="text-gray-500 text-sm mt-1">Organize and manage your saved Clients</p>
-        </div>
- 
-        {/* Stats tabs */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex gap-3">
-            <button
-              onClick={() => setActiveTab("clients")}
-              className={`flex items-center gap-3 px-7 py-5 rounded-xl font-semibold text-sm transition-all ${activeTab === "clients" ? "bg-[#337DD3] text-white shadow-md" : "bg-white text-gray-600 border border-gray-200 hover:border-blue-300"}`}
-            >
-              <span className="text-xl"><img src={activeTab === "clients" ? clientBadge : clientBadgeDark} alt="Client Badge" /></span>
-              <div className="text-left">
-                <div className="text-lg font-bold leading-none">{folder.totalClients}</div>
-                <div className={`text-xs ${activeTab === "clients" ? "text-blue-100" : "text-gray-400"}`}>Clients</div>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab("emails")}
-              className={`flex items-center gap-3 px-7 py-5 rounded-xl font-semibold text-sm transition-all ${activeTab === "emails" ? "bg-[#337DD3] text-white shadow-md" : "bg-white text-gray-600 border border-gray-200 hover:border-blue-300"}`}
-            >
-              <span className="text-xl"><img src={activeTab === "emails" ? emailBadgeLight : emailBadge} alt="Email Badge" /></span>
-              <div className="text-left">
-                <div className="text-lg font-bold leading-none">120</div>
-                <div className={`text-xs ${activeTab === "emails" ? "text-blue-100" : "text-gray-400"}`}>Emails</div>
-              </div>
-            </button>
-          </div>
-          <button onClick={onBack} className="border border-gray-300 text-gray-700 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-50 transition-colors bg-white">
-            Back to folder
-          </button>
-        </div>
- 
-        {/* Client table */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-5 py-4 flex items-center justify-between border-b border-gray-100">
-            <div className="flex items-center gap-3">
-              <div className={`w-13 h-13 rounded-full flex items-center justify-center text-white font-bold text-sm ${emailsSentCount > 0 ? "bg-blue-600" : "bg-gray-300"}`}>
-                {emailsSentCount}
-              </div>
-              <span className="text-sm font-medium text-gray-700">Emails Sent</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="relative" ref={exportRef}>
-                <button 
-                  onClick={() => setShowExportOptions(!showExportOptions)}
-                  className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-4 rounded-lg hover:bg-gray-50 transition-colors uppercase"
-                >
-                  <img src={exportContact} className="w-5 h-5" alt="Export Contacts" /> EXPORT CONTACTS
-                </button>
-                {showExportOptions && (
-                  <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-2">
-                    {(['xlsx', 'csv', 'xml', 'json'] as const).map(fmt => (
-                      <button
-                        key={fmt}
-                        onClick={() => handleExport(fmt)}
-                        className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors uppercase font-bold"
-                      >
-                        Download .{fmt}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <button onClick={onImport} disabled={isImporting} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-4 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed">
-                <img src={importContact} className="w-5 h-5" alt="Import Contact" /> {isImporting ? "IMPORTING..." : "IMPORT CONTACT"}
-              </button>
-              <button onClick={onAddClient} className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-4 rounded-lg transition-colors">
-                + ADD NEW CLIENT
-              </button>
-              <span className="text-xs text-gray-400">Show</span>
-              <select value={show} onChange={e => { setShow(Number(e.target.value)); setPage(1); }} className="border border-gray-200 rounded-lg px-4 py-4 text-xs focus:outline-none bg-white">
-                {[10, 25, 50].map(n => <option key={n}>{n}</option>)}
-              </select>
-              <span className="text-xs text-gray-400">Entries</span>
-              <div className="relative">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"><img src={searchIcon} className="w-5 h-5" alt="Search" /></span>
-                <input
-                  className="pl-7 pr-3 py-4 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 w-70 bg-white"
-                  placeholder="Search..."
-                  value={search}
-                  onChange={e => { setSearch(e.target.value); setPage(1); }}
-                />
-              </div>
-            </div>
-          </div>
- 
-          {activeTab === "clients" ? (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100">
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-45">Client Name</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-45">Email</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-35">Phone</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-35">Website</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">GMB</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">Facebook</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">X (twitter)</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">Instagram</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">Yelp</th>
-                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginated.map((c, i) => (
-                    <tr key={c.id} className={`border-b border-gray-50 hover:bg-blue-50/20 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}>
-                      <td className="px-3 py-5 text-sm text-gray-800 font-medium">
-                        <div className="max-w-45 truncate" title={c.businessName}>{c.businessName}</div>
-                      </td>
-                      <td className="px-3 py-5 text-sm text-gray-600">
-                        <div className="max-w-45 truncate" title={c.email}>{c.email}</div>
-                      </td>
-                      <td className="px-3 py-5 text-sm text-blue-600">
-                        <div className="max-w-35 truncate" title={c.phone ?? "—"}>{c.phone ?? "—"}</div>
-                      </td>
-                      <td className="px-3 py-5 text-sm text-blue-600">
-                        <div className="max-w-35 truncate" title={c.website ?? "—"}>{c.website ?? "—"}</div>
-                      </td>
-                      {[
-                        { val: c.gmb, color: "bg-[rgba(219,142,17,0.18)] text-[#DB8E11]" },
-                        { val: c.facebook, color: "bg-[rgba(33,79,212,0.18)] text-[#214FD4]" },
-                        { val: c.twitter, color: "bg-[rgba(105,105,105,0.18)] text-[#696969]" },
-                        { val: c.instagram, color: "bg-[rgba(222,89,107,0.18)] text-[#DE596B]" },
-                        { val: c.yelp, color: "bg-[rgba(250,63,63,0.18)] text-[#FA3F3F]" }
-                      ].map((platform, idx) => {
-                        const hasUrl = platform.val && platform.val !== "@NONE" && platform.val !== "Not found" && platform.val !== "null" && platform.val !== "";
-                        return (
-                          <td key={idx} className="px-3 py-5">
-                            <button
-                              disabled={!hasUrl}
-                              onClick={() => hasUrl && window.open(platform.val?.startsWith("http") ? platform.val : `https://${platform.val}`, "_blank")}
-                              className={`text-xs font-medium px-4 py-2 rounded-lg transition-colors min-w-15 ${hasUrl ? platform.color + " hover:opacity-80" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
+    const emailsSentCount = clients.filter(
+        (c) => c.group === "Contacted",
+    ).length;
+    const filtered = clients.filter(
+        (c) =>
+            c.businessName.toLowerCase().includes(search.toLowerCase()) ||
+            c.email.toLowerCase().includes(search.toLowerCase()),
+    );
+    const totalPages = Math.ceil(filtered.length / show);
+    const paginated = filtered.slice((page - 1) * show, page * show);
+
+    return (
+        <div className="min-h-screen bg-gray-50 p-3 sm:p-6">
+            <div className="max-w-7xl mx-auto">
+                <div className="text-center mb-6">
+                    <h1 className="text-2xl font-bold text-gray-900">
+                        Manage Clients
+                    </h1>
+                    <p className="text-gray-500 text-sm mt-1">
+                        Organize and manage your saved Clients
+                    </p>
+                </div>
+
+                {/* Stats tabs */}
+                <div className="flex gap-3 flex-row items-center content-center justify-between mb-4">
+                    <div className="flex gap-1 sm:gap-3">
+                        <button
+                            onClick={() => setActiveTab("clients")}
+                            className={`flex items-center gap-3 px-3 py-2 sm:px-7 sm:py-5 rounded-xl font-semibold text-sm cursor-pointer transition-all ${activeTab === "clients" ? "bg-[#337DD3] text-white shadow-md" : "bg-white text-gray-600 border border-gray-200 hover:border-blue-300"}`}
+                        >
+                            <span className="text-xl">
+                                <img
+                                    src={
+                                        activeTab === "clients"
+                                            ? clientBadge
+                                            : clientBadgeDark
+                                    }
+                                    alt="Client Badge"
+                                />
+                            </span>
+                            <div className="text-left">
+                                <div className="text-lg font-bold leading-none">
+                                    {folder.totalClients}
+                                </div>
+                                <div
+                                    className={`text-xs ${activeTab === "clients" ? "text-blue-100" : "text-gray-400"}`}
+                                >
+                                    Clients
+                                </div>
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => setActiveTab("emails")}
+                            className={`flex items-center gap-3 px-3 py-2 sm:px-7 sm:py-5 rounded-xl font-semibold text-sm cursor-pointer transition-all ${activeTab === "emails" ? "bg-[#337DD3] text-white shadow-md" : "bg-white text-gray-600 border border-gray-200 hover:border-blue-300"}`}
+                        >
+                            <span className="text-xl">
+                                <img
+                                    src={
+                                        activeTab === "emails"
+                                            ? emailBadgeLight
+                                            : emailBadge
+                                    }
+                                    alt="Email Badge"
+                                />
+                            </span>
+                            <div className="text-left">
+                                <div className="text-lg font-bold leading-none">
+                                    {clientsWithEmailCount}
+                                </div>
+                                <div
+                                    className={`text-xs ${activeTab === "emails" ? "text-blue-100" : "text-gray-400"}`}
+                                >
+                                    Emails
+                                </div>
+                            </div>
+                        </button>
+                    </div>
+                    <button
+                        onClick={onBack}
+                        className="border border-gray-300 text-gray-700 text-xs sm:text-sm font-semibold px-4 py-1.5 sm:py-2.5 max-w-x rounded-lg hover:bg-gray-50 transition-colors bg-white cursor-pointer"
+                    >
+                        Back to folder
+                    </button>
+                </div>
+
+                {/* Client table */}
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="px-3 sm:px-5 py-4 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between border-b border-gray-100">
+                        <div className="flex items-center gap-3">
+                            <div
+                                className={`w-13 h-13 rounded-full flex items-center justify-center text-white font-bold text-sm ${emailsSentCount > 0 ? "bg-blue-600" : "bg-gray-300"}`}
                             >
-                              Visit
+                                {emailsSentCount}
+                            </div>
+                            <span className="text-sm font-medium text-gray-700">
+                                Emails Sent
+                            </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <div className="relative" ref={exportRef}>
+                                <button
+                                    onClick={() =>
+                                        setShowExportOptions(!showExportOptions)
+                                    }
+                                    className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-4 rounded-lg hover:bg-gray-50 transition-colors uppercase"
+                                >
+                                    <img
+                                        src={exportContact}
+                                        className="w-5 h-5"
+                                        alt="Export Contacts"
+                                    />{" "}
+                                    EXPORT CONTACTS
+                                </button>
+                                {showExportOptions && (
+                                    <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-2">
+                                        {(
+                                            [
+                                                "xlsx",
+                                                "csv",
+                                                "xml",
+                                                "json",
+                                            ] as const
+                                        ).map((fmt) => (
+                                            <button
+                                                key={fmt}
+                                                onClick={() =>
+                                                    handleExport(fmt)
+                                                }
+                                                className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors uppercase font-bold"
+                                            >
+                                                Download .{fmt}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <button
+                                onClick={onImport}
+                                disabled={isImporting}
+                                className="flex items-center gap-1.5 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-4 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                            >
+                                <img
+                                    src={importContact}
+                                    className="w-5 h-5"
+                                    alt="Import Contact"
+                                />{" "}
+                                {isImporting
+                                    ? "IMPORTING..."
+                                    : "IMPORT CONTACT"}
                             </button>
-                          </td>
-                        );
-                      })}
-                      <td className="px-3 py-5 flex items-center gap-1">
-                        <button 
-                          onClick={() => setEditingClient(c)} 
-                          className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-500 transition-colors" 
-                          title="Edit"
-                        ><img src={editIcon} alt="edit" className="w-5 h-5" /></button>
-                        <button onClick={() => onDeleteClient(c.id)} className="p-1.5 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors" title="Delete"><img src={trashIcon} alt="trash" /></button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-45">Business Name</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-45">Email</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-25">Group</th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-20"><img src={emailBadge} alt="Email" /></th>
-                  <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-20">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginated.map((c, i) => (
-                  <tr key={c.id} className={`border-b border-gray-50 hover:bg-blue-50/20 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}>
-                    <td className="px-4 py-5 text-sm text-gray-800 font-medium">
-                      <div className="max-w-45 truncate" title={c.businessName}>{c.businessName}</div>
-                    </td>
-                    <td className="px-4 py-5 text-sm text-gray-600">
-                      <div className="max-w-45 truncate" title={c.email}>{c.email}</div>
-                    </td>
-                    <td className="px-4 py-5">
-                      <button className={`text-sm font-medium px-1 ${c.group === "Contacted" ? "text-green-600" : "text-blue-500"}`}>{c.group}</button>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{c.emailsSent}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button className="p-1.5 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors"><img src={email} className="h-5 w-5" alt="Email" /></button>
-                        <button onClick={() => onDeleteClient(c.id)} className="p-1.5 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors"><img src={trashIcon} className="h-5 w-5" alt="trash" /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
- 
-          <div className="px-4 py-3 flex items-center justify-between border-t border-gray-100">
-            <span className="text-sm text-gray-500">Showing {(page - 1) * show + 1} to {Math.min(page * show, filtered.length)} of {filtered.length} entries</span>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-2 py-1 text-gray-400 hover:text-gray-700 disabled:opacity-30">←</button>
-              {Array.from({ length: Math.min(totalPages, 6) }, (_, i) => i + 1).map(p => (
-                <button key={p} onClick={() => setPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${p === page ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-100"}`}>{p}</button>
-              ))}
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-2 py-1 text-gray-400 hover:text-gray-700 disabled:opacity-30">→</button>
-            </div>
-          </div>
-        </div>
-      </div>
+                            <button
+                                onClick={onAddClient}
+                                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3 py-4 rounded-lg transition-colors"
+                            >
+                                + ADD NEW CLIENT
+                            </button>
+                            <span className="text-xs text-gray-400">Show</span>
+                            <select
+                                value={show}
+                                onChange={(e) => {
+                                    setShow(Number(e.target.value));
+                                    setPage(1);
+                                }}
+                                className="border border-gray-200 rounded-lg px-4 py-4 text-xs focus:outline-none bg-white"
+                            >
+                                {[10, 25, 50].map((n) => (
+                                    <option key={n}>{n}</option>
+                                ))}
+                            </select>
+                            <span className="text-xs text-gray-400">
+                                Entries
+                            </span>
+                            <div className="relative">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">
+                                    <img
+                                        src={searchIcon}
+                                        className="w-5 h-5"
+                                        alt="Search"
+                                    />
+                                </span>
+                                <input
+                                    className="pl-7 pr-3 py-4 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-70 bg-white"
+                                    placeholder="Search..."
+                                    value={search}
+                                    onChange={(e) => {
+                                        setSearch(e.target.value);
+                                        setPage(1);
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    </div>
 
-      {editingClient && (
-        <EditClientModal
-          key={editingClient.id}
-          isOpen={!!editingClient}
-          client={editingClient}
-          onClose={() => setEditingClient(null)}
-          onSave={onUpdateClient}
-        />
-      )}
-    </div>
-  );
+                    {isClientsLoading ? (
+                        <div
+                            className="flex min-h-56 items-center justify-center gap-2 text-sm text-gray-500"
+                            role="status"
+                            aria-live="polite"
+                        >
+                            <span>Loading clients</span>
+                            <span className="animate-pulse tracking-widest">
+                                ...
+                            </span>
+                        </div>
+                    ) : activeTab === "clients" ? (
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="bg-gray-50 border-b border-gray-100">
+                                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-45">
+                                            Client Name
+                                        </th>
+                                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-45">
+                                            Email
+                                        </th>
+                                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-35">
+                                            Phone
+                                        </th>
+                                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-35">
+                                            Website
+                                        </th>
+                                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">
+                                            GMB
+                                        </th>
+                                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">
+                                            Facebook
+                                        </th>
+                                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">
+                                            X (twitter)
+                                        </th>
+                                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">
+                                            Instagram
+                                        </th>
+                                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">
+                                            Yelp
+                                        </th>
+                                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">
+                                            Action
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {paginated.map((c, i) => (
+                                        <tr
+                                            key={c.id}
+                                            className={`border-b border-gray-50 hover:bg-blue-50/20 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}
+                                        >
+                                            <td className="px-3 py-5 text-sm text-gray-800 font-medium">
+                                                <div
+                                                    className="max-w-45 truncate"
+                                                    title={c.businessName}
+                                                >
+                                                    {c.businessName}
+                                                </div>
+                                            </td>
+                                            <td className="px-3 py-5 text-sm text-gray-600">
+                                                <div
+                                                    className="max-w-45 truncate"
+                                                    title={c.email}
+                                                >
+                                                    {c.email}
+                                                </div>
+                                            </td>
+                                            <td className="px-3 py-5 text-sm text-blue-600">
+                                                <div
+                                                    className="max-w-35 truncate"
+                                                    title={c.phone ?? "—"}
+                                                >
+                                                    {c.phone ?? "—"}
+                                                </div>
+                                            </td>
+                                            <td className="px-3 py-5 text-sm text-blue-600">
+                                                <div
+                                                    className="max-w-35 truncate"
+                                                    title={c.website ?? "—"}
+                                                >
+                                                    {c.website ?? "—"}
+                                                </div>
+                                            </td>
+                                            {[
+                                                {
+                                                    val: c.gmb,
+                                                    color: "bg-[rgba(219,142,17,0.18)] text-[#DB8E11]",
+                                                },
+                                                {
+                                                    val: c.facebook,
+                                                    color: "bg-[rgba(33,79,212,0.18)] text-[#214FD4]",
+                                                },
+                                                {
+                                                    val: c.twitter,
+                                                    color: "bg-[rgba(105,105,105,0.18)] text-[#696969]",
+                                                },
+                                                {
+                                                    val: c.instagram,
+                                                    color: "bg-[rgba(222,89,107,0.18)] text-[#DE596B]",
+                                                },
+                                                {
+                                                    val: c.yelp,
+                                                    color: "bg-[rgba(250,63,63,0.18)] text-[#FA3F3F]",
+                                                },
+                                            ].map((platform, idx) => {
+                                                const hasUrl =
+                                                    platform.val &&
+                                                    platform.val !== "@NONE" &&
+                                                    platform.val !==
+                                                        "Not found" &&
+                                                    platform.val !== "null" &&
+                                                    platform.val !== "";
+                                                return (
+                                                    <td
+                                                        key={idx}
+                                                        className="px-3 py-5"
+                                                    >
+                                                        <button
+                                                            disabled={!hasUrl}
+                                                            onClick={() =>
+                                                                hasUrl &&
+                                                                window.open(
+                                                                    platform.val?.startsWith(
+                                                                        "http",
+                                                                    )
+                                                                        ? platform.val
+                                                                        : `https://${platform.val}`,
+                                                                    "_blank",
+                                                                )
+                                                            }
+                                                            className={`text-xs font-medium px-4 py-2 rounded-lg transition-colors min-w-15 ${hasUrl ? platform.color + " hover:opacity-80" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
+                                                        >
+                                                            Visit
+                                                        </button>
+                                                    </td>
+                                                );
+                                            })}
+                                            <td className="px-3 py-5 flex items-center gap-1">
+                                                <button
+                                                    onClick={() =>
+                                                        setEditingClient(c)
+                                                    }
+                                                    className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-500 transition-colors  cursor-pointer"
+                                                    title="Edit"
+                                                >
+                                                    <img
+                                                        src={editIcon}
+                                                        alt="edit"
+                                                        className="w-5 h-5"
+                                                    />
+                                                </button>
+                                                <button
+                                                    onClick={() =>
+                                                        onDeleteClient(c.id)
+                                                    }
+                                                    className="p-1.5 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
+                                                    title="Delete"
+                                                >
+                                                    <img
+                                                        src={trashIcon}
+                                                        alt="trash"
+                                                    />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <table className="w-full">
+                            <thead>
+                                <tr className="bg-gray-50 border-b border-gray-100">
+                                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-45">
+                                        Business Name
+                                    </th>
+                                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-45">
+                                        Email
+                                    </th>
+                                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-25">
+                                        Group
+                                    </th>
+                                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-20">
+                                        <img src={emailBadge} alt="Email" />
+                                    </th>
+                                    <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-4 py-5 min-w-20">
+                                        Actions
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {paginated.map((c, i) => (
+                                    <tr
+                                        key={c.id}
+                                        className={`border-b border-gray-50 hover:bg-blue-50/20 transition-colors ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}
+                                    >
+                                        <td className="px-4 py-5 text-sm text-gray-800 font-medium">
+                                            <div
+                                                className="max-w-45 truncate"
+                                                title={c.businessName}
+                                            >
+                                                {c.businessName}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-5 text-sm text-gray-600">
+                                            <div
+                                                className="max-w-45 truncate"
+                                                title={c.email}
+                                            >
+                                                {c.email}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-5">
+                                            <button
+                                                className={`text-sm font-medium px-1 ${c.group === "Contacted" ? "text-green-600" : "text-blue-500"}`}
+                                            >
+                                                {c.group}
+                                            </button>
+                                        </td>
+                                        <td className="px-4 py-3 text-sm text-gray-600">
+                                            {c.emailsSent}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex items-center gap-2">
+                                                <button className="p-1.5 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors">
+                                                    <img
+                                                        src={email}
+                                                        className="h-5 w-5"
+                                                        alt="Email"
+                                                    />
+                                                </button>
+                                                <button
+                                                    onClick={() =>
+                                                        onDeleteClient(c.id)
+                                                    }
+                                                    className="p-1.5 rounded-lg hover:bg-red-100 text-gray-400 hover:text-red-500 transition-colors"
+                                                >
+                                                    <img
+                                                        src={trashIcon}
+                                                        className="h-5 w-5"
+                                                        alt="trash"
+                                                    />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+
+                    <div className="px-4 py-3 flex items-center justify-between border-t border-gray-100">
+                        <span className="text-sm text-gray-500">
+                            Showing {(page - 1) * show + 1} to{" "}
+                            {Math.min(page * show, filtered.length)} of{" "}
+                            {filtered.length} entries
+                        </span>
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() =>
+                                    setPage((p) => Math.max(1, p - 1))
+                                }
+                                disabled={page === 1}
+                                className="px-2 py-1 text-gray-400 hover:text-gray-700 disabled:opacity-30"
+                            >
+                                ←
+                            </button>
+                            {Array.from(
+                                { length: Math.min(totalPages, 6) },
+                                (_, i) => i + 1,
+                            ).map((p) => (
+                                <button
+                                    key={p}
+                                    onClick={() => setPage(p)}
+                                    className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${p === page ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-100"}`}
+                                >
+                                    {p}
+                                </button>
+                            ))}
+                            <button
+                                onClick={() =>
+                                    setPage((p) => Math.min(totalPages, p + 1))
+                                }
+                                disabled={page === totalPages}
+                                className="px-2 py-1 text-gray-400 hover:text-gray-700 disabled:opacity-30"
+                            >
+                                →
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {editingClient && (
+                <EditClientModal
+                    key={editingClient.id}
+                    isOpen={!!editingClient}
+                    client={editingClient}
+                    onClose={() => setEditingClient(null)}
+                    onSave={onUpdateClient}
+                />
+            )}
+        </div>
+    );
 }
 
 export default ClientDetailView;

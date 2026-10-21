@@ -60,6 +60,7 @@ export default function ManageClients() {
     const [folderError, setFolderError] = useState("");
     const [clientError, setClientError] = useState("");
     const [isImporting, setIsImporting] = useState(false);
+    const [isLoadingFolders, setIsLoadingFolders] = useState(true);
 
     const fetchFolders = useCallback(async () => {
         try {
@@ -89,8 +90,26 @@ export default function ManageClients() {
             });
 
             setFolders(mapped);
+            // Restore the previously selected folder after refreshing
+            const savedFolderId = sessionStorage.getItem("selectedFolderId");
+
+            if (savedFolderId) {
+                const savedFolder = mapped.find(
+                    (folder) => folder.id === Number(savedFolderId),
+                );
+
+                if (savedFolder) {
+                    setSelectedFolder(savedFolder);
+                } else {
+                    // The saved folder no longer exists
+                    sessionStorage.removeItem("selectedFolderId");
+                    setSelectedFolder(null);
+                }
+            }
         } catch (error) {
             console.error("Failed to fetch folders", error);
+        } finally {
+            setIsLoadingFolders(false);
         }
     }, []);
 
@@ -163,6 +182,27 @@ export default function ManageClients() {
     const handleAddClient = async (client: Partial<ManagedClient>) => {
         if (!selectedFolder) return;
         setClientError("");
+
+        //check if intending email already exists in folder
+        const email = client.email?.trim().toLowerCase();
+        if (email) {
+            const existingClients = await clientService.getSavedClients(
+                selectedFolder.id,
+            );
+            const isDuplicate = existingClients.some((existing) => {
+                const existingEmail = (existing.email || existing.email_1 || "")
+                    .trim()
+                    .toLowerCase();
+                return email === existingEmail;
+            });
+            if (isDuplicate) {
+                setClientError(
+                    "A client with this email already exists in this folder.",
+                );
+                return;
+            }
+        }
+
         try {
             // Step 1: create minimal record (server only accepts business_name on create)
             const createdResp = await clientService.addClientManual({
@@ -346,11 +386,18 @@ export default function ManageClients() {
         <>
             <DashboardHeader />
 
-            {selectedFolder ? (
+            {isLoadingFolders ? (
+                <div className="min-h-screen flex items-center justify-center px-4 py-8">
+                    <div className="animate-spin rounded-full h-9 w-9 border-b-2 border-blue-600"></div>
+                </div>
+            ) : selectedFolder ? (
                 <ClientDetailView
                     folder={selectedFolder}
                     clients={clients}
-                    onBack={() => setSelectedFolder(null)}
+                    onBack={() => {
+                        sessionStorage.removeItem("selectedFolderId");
+                        setSelectedFolder(null);
+                    }}
                     onAddClient={() => setShowAddClient(true)}
                     onImport={() => {
                         setImportFlow("step1");
@@ -363,7 +410,13 @@ export default function ManageClients() {
             ) : (
                 <FolderTable
                     folders={folders}
-                    onSelect={(folder) => setSelectedFolder(folder)}
+                    onSelect={(folder) => {
+                        setSelectedFolder(folder);
+                        sessionStorage.setItem(
+                            "selectedFolderId",
+                            String(folder.id),
+                        );
+                    }}
                     onEdit={handleEditFolder}
                     onDelete={handleDeleteFolder}
                     onAddFolder={() => setShowAddFolder(true)}

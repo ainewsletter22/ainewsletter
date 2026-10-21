@@ -90,7 +90,12 @@ export default function DashboardHeader() {
             )}
 
             <header className="w-full bg-white border-b border-gray-100 px-4 lg:px-6 py-4 lg:py-7 flex flex-col lg:flex-row lg:items-center justify-between sticky top-0 z-40 gap-4 lg:gap-0">
-                <div className="flex items-center justify-between w-full lg:w-auto">
+                <div
+                    className="flex items-center justify-between w-full lg:w-auto cursor-pointer"
+                    onClick={() => {
+                        navigate("/");
+                    }}
+                >
                     {/* Logo */}
                     <div className="flex items-center">
                         <Logo />
