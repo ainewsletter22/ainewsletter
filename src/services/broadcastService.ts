@@ -62,4 +62,51 @@ export const broadcastService = {
   async deleteBroadcast(id: number): Promise<void> {
     await apiClient.delete(`/broadcast/delete/${id}`);
   },
+
+  /**
+   * Get synced categories from Resend
+   * GET /broadcast/synced-categories
+   */
+  async getSyncedCategories(): Promise<{
+    synced_categories: Array<{
+      client_cat_id: number;
+      category_name: string;
+      category_description: string;
+      connection_id: number;
+      brand_id: number;
+      brand_name: string;
+      resend_audience_id: string;
+      synced_client_count: number;
+      synced_at: string;
+      sync_status: string;
+    }>;
+    unsynced_categories: Array<{
+      client_cat_id: number;
+      category_name: string;
+      category_description: string;
+      connection_id: number | null;
+      brand_id: number | null;
+      brand_name: string | null;
+      resend_audience_id: string | null;
+      synced_client_count: number;
+      synced_at: string | null;
+      sync_status: string;
+      last_error: string | null;
+    }>;
+  }> {
+    const response = await apiClient.get('/broadcast/synced-categories');
+    return response.data.data;
+  },
+
+  /**
+   * Sync client categories to Resend
+   * POST /broadcast/sync-categories
+   */
+  async syncClientCategoriesToResend(clientCatIds: number[], brandId: number): Promise<any> {
+    const response = await apiClient.post('/broadcast/sync-categories', {
+      client_cat_ids: clientCatIds,
+      brand_id: brandId,
+    });
+    return response.data.data;
+  },
 };

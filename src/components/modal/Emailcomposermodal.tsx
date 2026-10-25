@@ -61,6 +61,9 @@ interface Props {
   templateId?: number;
   brand?: Brand | null;
   draftId?: number;
+  preSelectedCategoryId?: number;
+  brandId?: number;
+  isSingleClientSend?: boolean;
 }
 
 function getInitialLetter(value?: string) {
@@ -2825,7 +2828,7 @@ function ComposeStep({
 // ─── Confirm Step ─────────────────────────────────────────────────────────────
 
 function ConfirmStep({
-  form, onChange, onSend, sent, categories, isSending, sendError, sendVia,
+  form, onChange, onSend, sent, categories, isSending, sendError, sendVia, isSingleClientSend, onClose, broadcastResults,
 }: {
   form: ConfirmForm;
   onChange: <K extends keyof ConfirmForm>(k: K, v: ConfirmForm[K]) => void;
@@ -2835,15 +2838,65 @@ function ConfirmStep({
   isSending: boolean;
   sendError: string | null;
   sendVia?: SendVia;
+  isSingleClientSend?: boolean;
+  onClose?: () => void;
+  broadcastResults: any[] | null;
 }) {
   if (sent) {
     return (
       <div className="flex flex-col items-center justify-center h-full py-16 px-8 text-center">
         <h2 className="text-2xl font-bold text-gray-900 mb-1">Newsletter Sent<span className="text-amber-500">.</span></h2>
         <p className="text-gray-500 text-sm mb-8">Your Email has been sent</p>
+
+        {/* Show broadcast results if available */}
+        {broadcastResults && broadcastResults.length > 0 && (
+          <div className="w-full max-w-md mb-8">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3 text-left">Send Results by Category</h3>
+            <div className="space-y-2 text-left">
+              {broadcastResults.map((result, index) => {
+                const category = categories.find(cat => cat.id === result.client_cat_id);
+                const isSuccess = result.status === "success";
+                return (
+                  <div
+                    key={index}
+                    className={`p-3 rounded-lg border ${
+                      isSuccess
+                        ? "bg-green-50 border-green-200"
+                        : "bg-red-50 border-red-200"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium text-gray-900">
+                        {category?.name || `Category ${result.client_cat_id}`}
+                      </span>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full ${
+                          isSuccess
+                            ? "bg-green-100 text-green-700"
+                            : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {isSuccess ? "Success" : "Failed"}
+                      </span>
+                    </div>
+                    {result.error && (
+                      <p className="text-xs text-red-600 mt-1">{result.error}</p>
+                    )}
+                    {result.broadcast_id && isSuccess && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Broadcast ID: {result.broadcast_id}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="text-8xl mb-8">🥳</div>
         <button
-          onClick={() => window.location.reload()}
+          onClick={onClose}
           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-8 py-3 rounded-xl transition-colors"
         >
           ← Finish and Exit
@@ -2877,53 +2930,54 @@ function ConfirmStep({
 
         <hr className="border-gray-100 mb-6" />
 
-        {/* Recipients */}
-        <div className="mb-6">
-          <label className="text-sm font-medium text-gray-700 mb-2 block">
-            Recipients
-            {sendVia === "broadcast" && (
-              <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                Broadcast Mode: Max 3 categories, 250k each
-              </span>
-            )}
-          </label>
-          <div className="border border-gray-200 rounded-xl p-3 max-h-40 overflow-y-auto">
-            {categories.length === 0 ? (
-              <p className="text-sm text-gray-400">No categories available</p>
-            ) : (
-              categories.map(cat => {
-                const isSelected = form.clientCategoryIds.includes(cat.id);
-                const isBroadcast = sendVia === "broadcast";
-                const exceedsLimit = isBroadcast && cat.count && cat.count > 250000;
-                const wouldExceedMaxCategories = isBroadcast && !isSelected && form.clientCategoryIds.length >= 3;
-                const isDisabled = exceedsLimit || wouldExceedMaxCategories;
+        {/* Recipients - hide for single client send */}
+        {!isSingleClientSend && (
+          <div className="mb-6">
+            <label className="text-sm font-medium text-gray-700 mb-2 block">
+              Recipients
+              {sendVia === "broadcast" && (
+                <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                  Broadcast Mode: Max 3 categories, 250k each
+                </span>
+              )}
+            </label>
+            <div className="border border-gray-200 rounded-xl p-3 max-h-40 overflow-y-auto">
+              {categories.length === 0 ? (
+                <p className="text-sm text-gray-400">No categories available</p>
+              ) : (
+                categories.map(cat => {
+                  const isSelected = form.clientCategoryIds.includes(cat.id);
+                  const isBroadcast = sendVia === "broadcast";
+                  const exceedsLimit = isBroadcast && cat.count && cat.count > 250000;
+                  const wouldExceedMaxCategories = isBroadcast && !isSelected && form.clientCategoryIds.length >= 3;
+                  const isDisabled = exceedsLimit || wouldExceedMaxCategories;
 
-                return (
-                  <label 
-                    key={cat.id} 
-                    className={`flex items-center gap-2 py-2 cursor-pointer ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      disabled={isDisabled}
-                      onChange={e => {
-                        if (e.target.checked) {
-                          onChange("clientCategoryIds", [...form.clientCategoryIds, cat.id]);
-                        } else {
-                          onChange("clientCategoryIds", form.clientCategoryIds.filter(id => id !== cat.id));
-                        }
-                      }}
-                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
-                    />
-                    <div className="flex-1">
-                      <span className="text-sm text-gray-700">{cat.name}</span>
-                      {cat.count !== undefined && cat.count !== null && (
-                        <span className="text-xs text-gray-500 ml-2">
-                          ({cat.count.toLocaleString()} clients)
-                        </span>
-                      )}
-                    </div>
+                  return (
+                    <label
+                      key={cat.id}
+                      className={`flex items-center gap-2 py-2 cursor-pointer ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        disabled={isDisabled}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            onChange("clientCategoryIds", [...form.clientCategoryIds, cat.id]);
+                          } else {
+                            onChange("clientCategoryIds", form.clientCategoryIds.filter(id => id !== cat.id));
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                      />
+                      <div className="flex-1">
+                        <span className="text-sm text-gray-700">{cat.name}</span>
+                        {cat.count !== undefined && cat.count !== null && (
+                          <span className="text-xs text-gray-500 ml-2">
+                            ({cat.count.toLocaleString()} clients)
+                          </span>
+                        )}
+                      </div>
                     {exceedsLimit && (
                       <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
                         Exceeds 250k limit
@@ -2945,10 +2999,11 @@ function ConfirmStep({
             </p>
           )}
         </div>
+        )}
 
         <button
           onClick={onSend}
-          disabled={isSending || form.clientCategoryIds.length === 0}
+          disabled={isSending || (isSingleClientSend ? false : form.clientCategoryIds.length === 0)}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {isSending ? (
@@ -2996,60 +3051,61 @@ function ConfirmStep({
 
       <hr className="border-gray-100 mb-6" />
 
-      {/* Recipients */}
-      <div className="mb-6">
-        <label className="text-sm font-medium text-gray-700 mb-2 block">
-          Recipients
-          {sendVia === "broadcast" && (
-            <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-              Broadcast Mode: Max 3 categories, 250k each
-            </span>
-          )}
-        </label>
-        <div className="border border-gray-200 rounded-xl p-3 max-h-40 overflow-y-auto">
-          {categories.length === 0 ? (
-            <p className="text-sm text-gray-400">No categories available</p>
-          ) : (
-            categories.map(cat => {
-              const isSelected = form.clientCategoryIds.includes(cat.id);
-              const isBroadcast = sendVia === "broadcast";
-              const exceedsLimit = isBroadcast && cat.count && cat.count > 250000;
-              const wouldExceedMaxCategories = isBroadcast && !isSelected && form.clientCategoryIds.length >= 3;
-              const isDisabled = exceedsLimit || wouldExceedMaxCategories;
+      {/* Recipients - hide for single client send */}
+      {!isSingleClientSend && (
+        <div className="mb-6">
+          <label className="text-sm font-medium text-gray-700 mb-2 block">
+            Recipients
+            {sendVia === "broadcast" && (
+              <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                Broadcast Mode: Max 3 categories, 250k each
+              </span>
+            )}
+          </label>
+          <div className="border border-gray-200 rounded-xl p-3 max-h-40 overflow-y-auto">
+            {categories.length === 0 ? (
+              <p className="text-sm text-gray-400">No categories available</p>
+            ) : (
+              categories.map(cat => {
+                const isSelected = form.clientCategoryIds.includes(cat.id);
+                const isBroadcast = sendVia === "broadcast";
+                const exceedsLimit = isBroadcast && cat.count && cat.count > 250000;
+                const wouldExceedMaxCategories = isBroadcast && !isSelected && form.clientCategoryIds.length >= 3;
+                const isDisabled = exceedsLimit || wouldExceedMaxCategories;
 
-              return (
-                <label 
-                  key={cat.id} 
-                  className={`flex items-center gap-2 py-2 cursor-pointer ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    disabled={isDisabled}
-                    onChange={e => {
-                      if (e.target.checked) {
-                        onChange("clientCategoryIds", [...form.clientCategoryIds, cat.id]);
-                      } else {
-                        onChange("clientCategoryIds", form.clientCategoryIds.filter(id => id !== cat.id));
-                      }
-                    }}
-                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
-                  />
-                  <div className="flex-1">
-                    <span className="text-sm text-gray-700">{cat.name}</span>
-                    {cat.count !== undefined && cat.count !== null && (
-                      <span className="text-xs text-gray-500 ml-2">
-                        ({cat.count.toLocaleString()} clients)
+                return (
+                  <label
+                    key={cat.id}
+                    className={`flex items-center gap-2 py-2 cursor-pointer ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      disabled={isDisabled}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          onChange("clientCategoryIds", [...form.clientCategoryIds, cat.id]);
+                        } else {
+                          onChange("clientCategoryIds", form.clientCategoryIds.filter(id => id !== cat.id));
+                        }
+                      }}
+                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                    />
+                    <div className="flex-1">
+                      <span className="text-sm text-gray-700">{cat.name}</span>
+                      {cat.count !== undefined && cat.count !== null && (
+                        <span className="text-xs text-gray-500 ml-2">
+                          ({cat.count.toLocaleString()} clients)
+                        </span>
+                      )}
+                    </div>
+                    {exceedsLimit && (
+                      <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
+                        Exceeds 250k limit
                       </span>
                     )}
-                  </div>
-                  {exceedsLimit && (
-                    <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                      Exceeds 250k limit
-                    </span>
-                  )}
-                  {wouldExceedMaxCategories && (
-                    <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                    {wouldExceedMaxCategories && (
+                      <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
                       Max 3 categories
                     </span>
                   )}
@@ -3064,6 +3120,7 @@ function ConfirmStep({
           </p>
         )}
       </div>
+      )}
 
       <hr className="border-gray-100 mb-6" />
 
@@ -3148,13 +3205,15 @@ function ConfirmStep({
 
 // ─── Root Composer ────────────────────────────────────────────────────────────
 
-export function EmailComposerModal({ onClose, prefilled, templateId, brand, draftId }: Props) {
+export function EmailComposerModal({ onClose, prefilled, templateId, brand, draftId, preSelectedCategoryId, brandId: propBrandId, isSingleClientSend }: Props) {
   const [step, setStep] = useState<ComposerStep>("compose");
   const [sent, setSent] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [broadcastResults, setBroadcastResults] = useState<any[] | null>(null);
   const user = useAuthStore((state) => state.user);
-  const { brandId } = useParams();
+  const { brandId: routeBrandId } = useParams();
+  const brandId = propBrandId || routeBrandId;
   const [templateLayout, setTemplateLayout] = useState<TemplateLayoutBlock[]>(() => safeBuildTemplateLayout(templateId));
 
   // Requirement #3: local override so the composer can seamlessly fall
@@ -3223,6 +3282,16 @@ export function EmailComposerModal({ onClose, prefilled, templateId, brand, draf
     clientCategoryIds: [],
     isFromAIFlow: prefilled?.aiResult ? true : false,
   });
+
+  // Pre-select category if provided
+  useEffect(() => {
+    if (preSelectedCategoryId) {
+      setConfirm((prev) => ({
+        ...prev,
+        clientCategoryIds: [preSelectedCategoryId],
+      }));
+    }
+  }, [preSelectedCategoryId]);
 
   useEffect(() => {
     // Build initial template layout, but don't override if we have prefilled templateLayout
@@ -3706,6 +3775,7 @@ export function EmailComposerModal({ onClose, prefilled, templateId, brand, draf
           console.log('[EmailComposer] Broadcast payload:', broadcastPayload);
           const broadcastResult = await composerWorkflowService.sendBroadcast(broadcastPayload);
           console.log('[EmailComposer] Broadcast sent successfully:', broadcastResult);
+          setBroadcastResults(broadcastResult);
         } else {
           // Campaign mode (normal sending)
           console.log('[EmailComposer] Sending campaign to categories:', confirm.clientCategoryIds);
@@ -3798,6 +3868,9 @@ export function EmailComposerModal({ onClose, prefilled, templateId, brand, draf
             isSending={isSending}
             sendError={sendError}
             sendVia={brand?.sendVia}
+            isSingleClientSend={isSingleClientSend}
+            onClose={onClose}
+            broadcastResults={broadcastResults}
           />
         )}
       </div>

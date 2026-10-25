@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import type { ClientUpdatePayload } from "../types/domain";
+import type { Brand } from "../types/Types";
 import clientBadge from "../assets/clientBadge.svg";
 import clientBadgeDark from "../assets/clientBadgeDark.svg";
 import emailBadge from "../assets/emailBadge.svg";
@@ -10,8 +11,12 @@ import importContact from "../assets/importContact.svg";
 import searchIcon from "../assets/searchIconBAW.svg";
 import trashIcon from "../assets/trashIcon.svg";
 import editIcon from "../assets/editIcon.svg"; // Assuming this asset exists
-import { clientService } from "../services/clientService";
 import EditClientModal from "./modal/EditClientModal";
+import { EmailComposerModal } from "./modal/Emailcomposermodal";
+import { AIAgentFlow } from "./modal/Aiagentflow";
+import { clientService } from "../services/clientService";
+import { brandService } from "../services/brandService";
+import { domainService } from "../services/domainService";
 
 // type ImportFlow = "idle" | "step1" | "file" | "paste" | "success";
 
@@ -62,6 +67,17 @@ function ClientDetailView({
     const [page, setPage] = useState(1);
     const [showExportOptions, setShowExportOptions] = useState(false);
     const [editingClient, setEditingClient] = useState<Client | null>(null);
+    const [showComposer, setShowComposer] = useState(false);
+    const [showEmailOptions, setShowEmailOptions] = useState(false);
+    const [showAIFlow, setShowAIFlow] = useState(false);
+    const [showBrandSelection, setShowBrandSelection] = useState(false);
+    const [showTemplateSelection, setShowTemplateSelection] = useState(false);
+    const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+    const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
+    const [allBrands, setAllBrands] = useState<Brand[]>([]);
+    const [tempFolderId, setTempFolderId] = useState<number | null>(null);
+    const [aiPrefilled, setAiPrefilled] = useState<any>(null);
+    const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
     const exportRef = useRef<HTMLDivElement>(null);
     const clientsWithEmailCount = clients.filter((c) => c.email).length;
     const isClientsLoading = clients.length < folder.totalClients;
@@ -78,16 +94,270 @@ function ClientDetailView({
         return () => document.removeEventListener("mousedown", handler);
     }, []);
 
+    useEffect(() => {
+        const loadBrands = async () => {
+            try {
+                const brands = await brandService.listBrands();
+                console.log('[ClientDetailView] Raw brands from API:', brands);
+                if (brands && brands.length > 0) {
+                    const normalizedBrands = brands.map(b => ({
+                        ...b,
+                        sendVia: ((b as any).send_via ?? (b as any).sends_via ?? b.sendsVia) as "campaign" | "broadcast" | undefined,
+                    }));
+                    console.log('[ClientDetailView] Normalized brands:', normalizedBrands);
+                    setAllBrands(normalizedBrands);
+
+                    // Load domains for each brand
+                    try {
+                        const allDomains = await domainService.listDomains();
+                        console.log('[ClientDetailView] All domains:', allDomains);
+                        const brandsWithDomains = normalizedBrands.map(b => {
+                            // Only include verified domains
+                            const brandDomains = allDomains.filter(d => d.brand_id === b.id && d.status === "Verified");
+                            console.log(`[ClientDetailView] Brand ${b.id} (${b.name}) verified domains:`, brandDomains);
+                            return { ...b, domains: brandDomains };
+                        });
+                        setAllBrands(brandsWithDomains);
+                    } catch (domainError) {
+                        console.error("Failed to load domains for brands:", domainError);
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to load brands:", error);
+            }
+        };
+        void loadBrands();
+    }, []);
+
+    const handleEmailClient = (client: Client) => {
+        if (!client.email) {
+            alert("This client does not have an email address.");
+            return;
+        }
+        setSelectedClient(client);
+        setShowBrandSelection(true);
+    };
+
+    const handleBrandSelect = (brand: Brand) => {
+        setSelectedBrand(brand);
+        setShowBrandSelection(false);
+        setShowEmailOptions(true);
+    };
+
+    const handleUseTemplate = async () => {
+        if (!selectedClient) return;
+        setShowEmailOptions(false);
+        setShowTemplateSelection(true);
+    };
+
+    const handleTemplateSelect = async (templateId: number) => {
+        if (!selectedClient || !selectedBrand) return;
+        setShowTemplateSelection(false);
+
+        let createdTempFolderId: number | null = null;
+        let createdClientId: number | null = null;
+
+        try {
+            console.log('[handleTemplateSelect] Selected client:', selectedClient);
+            console.log('[handleTemplateSelect] Client email:', selectedClient.email);
+
+            // Create temporary folder with client's business name
+            const tempFolderName = `Temp-${selectedClient.businessName.trim()}-${Date.now()}`;
+            console.log('[handleTemplateSelect] Creating temp folder:', tempFolderName);
+            const tempFolder = await clientService.createCategory(tempFolderName, "");
+            createdTempFolderId = tempFolder.data.data.id;
+            console.log('[handleTemplateSelect] Temp folder created with ID:', createdTempFolderId);
+            setTempFolderId(createdTempFolderId);
+
+            // Create a copy of the client in the temporary folder
+            console.log('[handleTemplateSelect] Creating copy of client...');
+            const createPayload: any = {
+                business_name: selectedClient.businessName,
+                client_cat_id: createdTempFolderId,
+                email: selectedClient.email,
+                phone: selectedClient.phone,
+                website: selectedClient.website,
+            };
+            const createdClient = await clientService.addClientManual(createPayload);
+            createdClientId = createdClient?.data?.id;
+            console.log('[handleTemplateSelect] Client copy created with ID:', createdClientId);
+
+            if (!createdClientId) throw new Error("Failed to create client copy");
+
+            // Verify the client is in the temp folder
+            const clientsInTempFolder = await clientService.getSavedClients(createdTempFolderId || undefined);
+            console.log('[handleTemplateSelect] Clients in temp folder:', clientsInTempFolder);
+
+            // Set selected template and open composer
+            setSelectedTemplateId(templateId);
+            setShowComposer(true);
+        } catch (error) {
+            console.error("Failed to prepare email for client:", error);
+            alert("Failed to prepare email. Please try again.");
+
+            // Clean up temporary folder if it was created
+            if (createdTempFolderId) {
+                try {
+                    await clientService.deleteCategory(createdTempFolderId);
+                    setTempFolderId(null);
+                } catch (cleanupError) {
+                    console.error("Failed to clean up temporary folder:", cleanupError);
+                }
+            }
+        }
+    };
+
+    const handleUseAIFlow = async () => {
+        if (!selectedClient || !selectedBrand) return;
+        setShowEmailOptions(false);
+        setShowAIFlow(true);
+    };
+
+    const handleAIDone = async (prefilled: any) => {
+        setShowAIFlow(false);
+
+        if (!selectedClient || !selectedBrand) return;
+
+        let createdTempFolderId: number | null = null;
+        let createdClientId: number | null = null;
+
+        try {
+            console.log('[handleAIDone] Selected client:', selectedClient);
+            console.log('[handleAIDone] Client email:', selectedClient.email);
+
+            // Create temporary folder with client's business name
+            const tempFolderName = `Temp-${selectedClient.businessName.trim()}-${Date.now()}`;
+            console.log('[handleAIDone] Creating temp folder:', tempFolderName);
+            const tempFolder = await clientService.createCategory(tempFolderName, "");
+            createdTempFolderId = tempFolder.data.data.id;
+            console.log('[handleAIDone] Temp folder created with ID:', createdTempFolderId);
+            setTempFolderId(createdTempFolderId);
+
+            // Create a copy of the client in the temporary folder
+            console.log('[handleAIDone] Creating copy of client...');
+            const createPayload: any = {
+                business_name: selectedClient.businessName,
+                client_cat_id: createdTempFolderId,
+                email: selectedClient.email,
+                phone: selectedClient.phone,
+                website: selectedClient.website,
+            };
+            const createdClient = await clientService.addClientManual(createPayload);
+            createdClientId = createdClient?.data?.id;
+            console.log('[handleAIDone] Client copy created with ID:', createdClientId);
+
+            if (!createdClientId) throw new Error("Failed to create client copy");
+
+            // Verify the client is in the temp folder
+            const clientsInTempFolder = await clientService.getSavedClients(createdTempFolderId || undefined);
+            console.log('[handleAIDone] Clients in temp folder:', clientsInTempFolder);
+
+            // Set AI prefilled data and open composer
+            setAiPrefilled(prefilled);
+            setShowComposer(true);
+        } catch (error) {
+            console.error("Failed to prepare email for client:", error);
+            alert("Failed to prepare email. Please try again.");
+
+            // Clean up temporary folder if it was created
+            if (createdTempFolderId) {
+                try {
+                    await clientService.deleteCategory(createdTempFolderId);
+                    setTempFolderId(null);
+                } catch (cleanupError) {
+                    console.error("Failed to clean up temporary folder:", cleanupError);
+                }
+            }
+        }
+    };
+
+    const handleComposerClose = async () => {
+        setShowComposer(false);
+
+        // Delete temporary folder (contains the client copy)
+        if (tempFolderId) {
+            try {
+                console.log('[handleComposerClose] Deleting temporary folder:', tempFolderId);
+                await clientService.deleteCategory(tempFolderId);
+                setTempFolderId(null);
+                console.log('[handleComposerClose] Temporary folder deleted successfully');
+            } catch (error) {
+                console.error("Failed to clean up temporary folder:", error);
+            }
+        }
+    };
+
     const handleExport = async (format: "xlsx" | "csv" | "xml" | "json") => {
         try {
-            const data = await clientService.exportClients(format);
-            const url = window.URL.createObjectURL(new Blob([data]));
+            const exportData = clients.map((c) => ({
+                "Client Name": c.businessName,
+                Email: c.email,
+                Phone: c.phone,
+                Website: c.website || "",
+                GMB: c.gmb || "",
+                Facebook: c.facebook || "",
+                "X (twitter)": c.twitter || "",
+                Instagram: c.instagram || "",
+            }));
+
+            let content: string;
+            let mimeType: string;
+
+            if (format === "json") {
+                content = JSON.stringify(exportData, null, 2);
+                mimeType = "application/json";
+            } else if (format === "csv") {
+                const headers = Object.keys(exportData[0] || {});
+                const csvRows = [
+                    headers.join(","),
+                    ...exportData.map((row) =>
+                        headers
+                            .map((header) => {
+                                const value = row[header as keyof typeof row];
+                                const stringValue = String(value || "");
+                                return stringValue.includes(",")
+                                    ? `"${stringValue.replace(/"/g, '""')}"`
+                                    : stringValue;
+                            })
+                            .join(","),
+                    ),
+                ];
+                content = csvRows.join("\n");
+                mimeType = "text/csv";
+            } else if (format === "xml") {
+                const xmlRows = exportData
+                    .map(
+                        (row) => `
+  <client>
+    ${Object.entries(row)
+        .map(([key, value]) => `    <${key}>${value || ""}</${key}>`)
+        .join("\n")}
+  </client>`,
+                    )
+                    .join("");
+                content = `<?xml version="1.0" encoding="UTF-8"?>\n<clients>\n${xmlRows}\n</clients>`;
+                mimeType = "application/xml";
+            } else {
+                // xlsx - simple HTML table format that Excel can open
+                const headers = Object.keys(exportData[0] || {});
+                const tableRows = [
+                    `<tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr>`,
+                    ...exportData.map(
+                        (row) =>
+                            `<tr>${headers
+                                .map((header) => `<td>${row[header as keyof typeof row] || ""}</td>`)
+                                .join("")}</tr>`,
+                    ),
+                ];
+                content = `<html><head><meta charset="UTF-8"></head><body><table border="1">${tableRows.join("")}</table></body></html>`;
+                mimeType = "application/vnd.ms-excel";
+            }
+
+            const blob = new Blob([content], { type: mimeType });
+            const url = window.URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = url;
-            link.setAttribute(
-                "download",
-                `clients_export_${folder.name}.${format}`,
-            );
+            link.setAttribute("download", `clients_export_${folder.name}.${format}`);
             document.body.appendChild(link);
             link.click();
             link.parentNode?.removeChild(link);
@@ -518,7 +788,11 @@ function ClientDetailView({
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-2">
-                                                <button className="p-1.5 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors">
+                                                <button
+                                                    onClick={() => handleEmailClient(c)}
+                                                    className="p-1.5 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors"
+                                                    title="Send Email"
+                                                >
                                                     <img
                                                         src={email}
                                                         className="h-5 w-5"
@@ -587,6 +861,136 @@ function ClientDetailView({
                 </div>
             </div>
 
+            {showComposer && tempFolderId && selectedBrand && (
+                <EmailComposerModal
+                    onClose={handleComposerClose}
+                    brand={selectedBrand}
+                    brandId={selectedBrand.id}
+                    preSelectedCategoryId={tempFolderId}
+                    prefilled={aiPrefilled}
+                    draftId={aiPrefilled?.draftId}
+                    templateId={selectedTemplateId || undefined}
+                    isSingleClientSend={true}
+                />
+            )}
+
+            {showAIFlow && selectedBrand && (
+                <AIAgentFlow
+                    onClose={() => setShowAIFlow(false)}
+                    onDone={handleAIDone}
+                    brandId={selectedBrand.id}
+                    domainId={selectedBrand.domains && selectedBrand.domains.length > 0 ? selectedBrand.domains[0].id : undefined}
+                />
+            )}
+
+            {showBrandSelection && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
+                        <h2 className="text-xl font-bold text-gray-900 mb-4">
+                            Select Brand
+                        </h2>
+                        <p className="text-gray-600 mb-6">
+                            Which brand would you like to use to send this email?
+                        </p>
+                        <div className="flex flex-col gap-3 max-h-60 overflow-y-auto">
+                            {allBrands.map((b) => {
+                                const hasDomains = b.domains && b.domains.length > 0;
+                                return (
+                                    <button
+                                        key={b.id}
+                                        onClick={() => hasDomains && handleBrandSelect(b)}
+                                        className={`w-full py-3 px-4 text-left font-semibold rounded-xl transition-colors ${
+                                            hasDomains
+                                                ? "bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200"
+                                                : "bg-gray-50 text-gray-400 cursor-not-allowed border border-gray-200"
+                                        }`}
+                                        disabled={!hasDomains}
+                                        title={!hasDomains ? "No verified domains" : ""}
+                                    >
+                                        <div className="flex justify-between items-center">
+                                            <span>{b.name || (b as any).brand_name || `Brand ${b.id}`}</span>
+                                            <span className={`text-xs font-normal ${
+                                                hasDomains ? "text-green-600" : "text-red-400"
+                                            }`}>
+                                                {hasDomains ? "✓ Verified" : "No domains"}
+                                            </span>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <button
+                            onClick={() => setShowBrandSelection(false)}
+                            className="w-full mt-4 py-3 px-4 border border-gray-300 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {showEmailOptions && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
+                        <h2 className="text-xl font-bold text-gray-900 mb-4">
+                            Send Email to {selectedClient?.businessName}
+                        </h2>
+                        <p className="text-gray-600 mb-6">
+                            How would you like to create this email?
+                        </p>
+                        <div className="flex flex-col gap-3">
+                            <button
+                                onClick={handleUseTemplate}
+                                className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors"
+                            >
+                                Use Template
+                            </button>
+                            <button
+                                onClick={handleUseAIFlow}
+                                className="w-full py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-800 font-semibold rounded-xl transition-colors"
+                            >
+                                Use AI Flow
+                            </button>
+                            <button
+                                onClick={() => setShowEmailOptions(false)}
+                                className="w-full py-3 px-4 border border-gray-300 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showTemplateSelection && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
+                        <h2 className="text-xl font-bold text-gray-900 mb-4">
+                            Select Template
+                        </h2>
+                        <p className="text-gray-600 mb-6">
+                            Which template would you like to use?
+                        </p>
+                        <div className="flex flex-col gap-3 max-h-60 overflow-y-auto">
+                            {[1, 2, 3, 4, 5].map((id) => (
+                                <button
+                                    key={id}
+                                    onClick={() => handleTemplateSelect(id)}
+                                    className="w-full py-3 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold rounded-xl transition-colors border border-blue-200"
+                                >
+                                    Template {id}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            onClick={() => setShowTemplateSelection(false)}
+                            className="w-full mt-4 py-3 px-4 border border-gray-300 text-gray-600 font-semibold rounded-xl hover:bg-gray-50 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
             {editingClient && (
                 <EditClientModal
                     key={editingClient.id}

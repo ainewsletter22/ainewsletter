@@ -5,7 +5,6 @@ import type { Brand, BrandFormValues, FooterSettings } from "../../types/Types";
 import { getApiErrorMessage } from "../../utils/api";
 import { brandService } from "../../services/brandService";
 import { domainService } from "../../services/domainService";
-import { smtpService } from "../../services/smtpService";
 import {
     setAccountReviewRequired,
     getAccountReviewRequired,
@@ -23,7 +22,6 @@ import {
     FooterSettingsSection,
     PrivacySection,
     SendingLimitSection,
-    SmtpSettingsSection,
     ResendSyncSection,
 } from "../../components/brands/BrandAccordionSections";
 import { CreateBrandModal } from "../../components/modal/CreateBrandModal";
@@ -68,7 +66,6 @@ export default function BrandsPage() {
     const [showCreate, setShowCreate] = useState(false);
     const [creating, setCreating] = useState(false);
     const [savingSection, setSavingSection] = useState<SavingSection>(null);
-    const [smtpError, setSmtpError] = useState<string | null>(null);
     const [lookups, setLookups] = useState<Lookups>({
         regions: [],
         smtpProviders: [],
@@ -744,7 +741,7 @@ export default function BrandsPage() {
                                         />
                                     </Accordion>
 
-                                    <Accordion
+                                    {/* <Accordion
                                         icon={icons.mail}
                                         title="SMTP Settings"
                                     >
@@ -854,7 +851,7 @@ export default function BrandsPage() {
                                                 }
                                             }}
                                         />
-                                    </Accordion>
+                                    </Accordion> */}
 
                                     <Accordion
                                         icon={icons.bell}
