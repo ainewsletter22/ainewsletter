@@ -531,7 +531,7 @@ export function AddDomainSection({
                             <button
                                 onClick={handleAddDomain}
                                 disabled={!name.trim()}
-                                className="inline-flex items-center gap-1.5 bg-white border border-blue-500 text-blue-600 text-sm font-semibold px-4 py-2.5 rounded-lg hover:bg-blue-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="inline-flex items-center gap-1.5 bg-white border border-blue-500 text-blue-600 text-sm font-semibold px-4 py-2.5 rounded-lg cursor-pointer hover:bg-blue-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                                 +Add New Domain
                             </button>
@@ -760,7 +760,7 @@ export function AddDomainSection({
                             setName("");
                             setStep("form");
                         }}
-                        className="flex items-center gap-2 border border-blue-500 text-blue-600 text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-50"
+                        className="flex items-center gap-2 border border-blue-500 text-blue-600 text-sm font-semibold px-3 py-2 rounded-lg cursor-pointer hover:bg-blue-50"
                     >
                         + Add New Domain
                     </button>
@@ -1232,11 +1232,15 @@ export function PrivacySection({
                 </label>
             </div>
 
-            <div className="flex gap-3 mt-8">
+            <div className="flex gap-3 mt-8 cursor-pointer">
                 <Btn variant="outline" onClick={onCancel}>
                     ✕ Cancel
                 </Btn>
-                <Btn onClick={() => onSave(values)} disabled={saving}>
+                <Btn
+                    className="cursor-pointer"
+                    onClick={() => onSave(values)}
+                    disabled={saving}
+                >
                     {saving ? "Saving..." : "Save Settings"} →
                 </Btn>
             </div>
@@ -1557,7 +1561,7 @@ export function SendModeSection({
     );
 }
 
-// ─── Resend Sync Management Section ─────────────────────────────────────────────
+// ───  Sync Management Section ─────────────────────────────────────────────
 
 interface ResendSyncSectionProps {
     brandId: number;

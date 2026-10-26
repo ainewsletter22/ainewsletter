@@ -450,6 +450,7 @@ export default function BrandsPage() {
         try {
             await brandService.updateBrandIdentity(activeBrand.id, values);
             await refreshActive(activeBrand.id);
+            alert("Changes saved successfully.");
         } catch (error) {
             console.error("Failed to save brand", error);
         } finally {
@@ -838,6 +839,9 @@ export default function BrandsPage() {
                                                               }
                                                             : prev,
                                                     );
+                                                    alert(
+                                                        "Changes saved successfully.",
+                                                    );
                                                 } catch (error) {
                                                     const message =
                                                         getApiErrorMessage(
@@ -892,6 +896,9 @@ export default function BrandsPage() {
                                                     );
                                                     await refreshActive(
                                                         activeBrand.id,
+                                                    );
+                                                    alert(
+                                                        "Changes saved successfully.",
                                                     );
                                                 } catch (error) {
                                                     console.error(
@@ -1037,6 +1044,9 @@ export default function BrandsPage() {
                                                     await refreshActive(
                                                         activeBrand.id,
                                                     );
+                                                    alert(
+                                                        "Changes saved successfully.",
+                                                    );
                                                 } catch (error) {
                                                     console.error(
                                                         "Failed to save footer settings:",
@@ -1109,7 +1119,7 @@ export default function BrandsPage() {
 
                                     <Accordion
                                         icon={icons.bell}
-                                        title="Resend Sync Management"
+                                        title="Sync Management"
                                     >
                                         <ResendSyncSection
                                             brandId={activeBrand.id}
