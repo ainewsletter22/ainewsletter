@@ -238,13 +238,15 @@ export const clientService = {
 
     async exportClients(
         format: "xlsx" | "csv" | "xml" | "json",
+        categoryId?: number | string,
     ): Promise<Blob> {
-        const response = await apiClient.get(
-            `/clients/export?format=${format}`,
-            {
-                responseType: "blob",
-            },
-        );
+        const fields = "business_name,email,phone,website,google_maps_url,facebook_url,twitter_url,instagram_url";
+        const url = categoryId
+            ? `/clients/export?format=${format}&client_cat_id=${categoryId}&fields=${fields}`
+            : `/clients/export?format=${format}&fields=${fields}`;
+        const response = await apiClient.get(url, {
+            responseType: "blob",
+        });
         return response.data;
     },
 
@@ -286,34 +288,20 @@ export const clientService = {
         for (let i = 0; i < clients.length; i += BATCH_SIZE) {
             const batch = clients.slice(i, i + BATCH_SIZE);
 
-            // First create all clients in this batch without category
+            // Create all clients in this batch with all required fields including category
             const createdClients = await Promise.all(
                 batch.map((client) =>
                     this.addClientManual({
                         business_name: client.business_name,
+                        email: client.email,
+                        phone: client.phone,
+                        website: client.website,
+                        client_cat_id: categoryId,
                     }),
                 ),
             );
 
-            // Then update each client with their full data including category
-            const batchResults = await Promise.all(
-                createdClients.map((response, index) => {
-                    const createdId = response?.data?.id;
-                    if (!createdId)
-                        throw new Error("Failed to get created client id");
-
-                    const client = batch[index];
-                    const updatePayload: ClientUpdatePayload = {};
-                    if (client.email) updatePayload.email = client.email;
-                    if (client.phone) updatePayload.phone = client.phone;
-                    if (client.website) updatePayload.website = client.website;
-                    updatePayload.client_cat_id = categoryId;
-
-                    return this.updateClient(createdId, updatePayload);
-                }),
-            );
-
-            results.push(...batchResults);
+            results.push(...createdClients);
         }
 
         return results;
@@ -327,5 +315,15 @@ export const clientService = {
     async inspectN8N(payload: Record<string, unknown>) {
         const response = await apiClient.post("/leads/inspect-n8n", payload);
         return response.data;
+    },
+
+    async getLatestClients() {
+        const response = await apiClient.get("/latest/clients");
+        return response.data.data;
+    },
+
+    async getLatestEmails() {
+        const response = await apiClient.get("/latest/emails");
+        return response.data.data;
     },
 };

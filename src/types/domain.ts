@@ -46,6 +46,8 @@ export interface Category {
   created_at?: string | null;
   createdAt?: string | null;
   count?: number | null;
+  is_synced_to_resend?: boolean | null;
+  resend_audience_id?: string | null;
 }
 
 export interface RawLead {

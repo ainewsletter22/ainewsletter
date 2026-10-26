@@ -14,21 +14,27 @@ export function ResendSyncManagement({
 }: Props) {
     const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
     const [deleting, setDeleting] = useState(false);
-    const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState<{
         type: "success" | "error";
         text: string;
     } | null>(null);
     const [categories, setCategories] = useState<Category[]>([]);
+    const [syncedCategoryIds, setSyncedCategoryIds] = useState<number[]>([]);
     const [loading, setLoading] = useState(true);
+    const MAX_SYNCED_CATEGORIES = 3;
 
     useEffect(() => {
-        const fetchCategories = async () => {
+        const fetchData = async () => {
             try {
-                const cats = await clientService.getCategories();
+                const [cats, syncedData] = await Promise.all([
+                    clientService.getCategories(),
+                    broadcastService.getSyncedCategories(),
+                ]);
                 setCategories(cats);
+                const syncedIds = syncedData.synced_categories.map(cat => cat.client_cat_id);
+                setSyncedCategoryIds(syncedIds);
             } catch (error) {
-                console.error("Failed to fetch categories:", error);
+                console.error("Failed to fetch data:", error);
                 setMessage({
                     type: "error",
                     text: "Failed to load categories. Please try again.",
@@ -37,36 +43,8 @@ export function ResendSyncManagement({
                 setLoading(false);
             }
         };
-        void fetchCategories();
+        void fetchData();
     }, []);
-
-    const handleSave = async () => {
-        if (selectedCategories.length === 0 || saving || disabled) return;
-
-        setSaving(true);
-        setMessage(null);
-
-        try {
-            // Replace this with the actual save/sync method in broadcastService.
-            // await broadcastService.syncClientCategoriesToResend(
-            //     selectedCategories,
-            // );
-
-            setMessage({
-                type: "success",
-                text: `Successfully saved ${selectedCategories.length} categories to Resend.`,
-            });
-        } catch (error) {
-            console.error("Failed to save categories to Resend:", error);
-
-            setMessage({
-                type: "error",
-                text: "Failed to save categories to Resend. Please try again.",
-            });
-        } finally {
-            setSaving(false);
-        }
-    };
 
     const handleDelete = async () => {
         if (selectedCategories.length === 0 || deleting) return;
@@ -80,16 +58,24 @@ export function ResendSyncManagement({
                     selectedCategories,
                 );
             console.log(result);
+
+            // Refresh synced categories after successful deletion
+            const syncedData = await broadcastService.getSyncedCategories();
+            const syncedIds = syncedData.synced_categories.map(cat => cat.client_cat_id);
+            setSyncedCategoryIds(syncedIds);
+
             setMessage({
                 type: "success",
                 text: `Successfully removed synced data for ${selectedCategories.length} categories from Resend`,
             });
             setSelectedCategories([]);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to delete from Resend:", error);
+
+            const errorMessage = error?.response?.data?.message || error?.message || "Failed to remove synced data from Resend. Please try again.";
             setMessage({
                 type: "error",
-                text: "Failed to remove synced data from Resend. Please try again.",
+                text: errorMessage,
             });
         } finally {
             setDeleting(false);
@@ -103,6 +89,11 @@ export function ResendSyncManagement({
                 : [...prev, id],
         );
     };
+
+    // Auto-select categories that are already synced
+    useEffect(() => {
+        setSelectedCategories(syncedCategoryIds);
+    }, [syncedCategoryIds]);
 
     if (loading) {
         return (
@@ -122,8 +113,10 @@ export function ResendSyncManagement({
                         Resend Sync Management
                     </h3>
                     <p className="text-xs text-gray-500 mt-1">
-                        Remove synced contacts and audience folders from Resend
-                        for selected categories
+                        Sync client categories to Resend (Max {MAX_SYNCED_CATEGORIES} categories per plan)
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                        Selected: {selectedCategories.length}/{MAX_SYNCED_CATEGORIES}
                     </p>
                 </div>
                 <button
@@ -176,9 +169,11 @@ export function ResendSyncManagement({
                                     )}
                                 </div>
                             </div>
-                            <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
-                                Synced
-                            </span>
+                            {syncedCategoryIds.includes(category.id) && (
+                                <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">
+                                    Synced
+                                </span>
+                            )}
                         </label>
                     ))
                 )}
@@ -210,7 +205,7 @@ export function ResendSyncManagement({
                         ? "Removing..."
                         : "Remove from Email Sending Server"}
                 </button>
-                <button
+                {/* <button
                     onClick={handleSave}
                     disabled={
                         disabled || deleting || selectedCategories.length === 0
@@ -218,19 +213,10 @@ export function ResendSyncManagement({
                     className="flex-1 py-2 px-4 rounded-lg bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {saving ? "Saving..." : "Save to Email Sending Server"}
-                </button>
+                </button> */}
             </div>
 
-            {/* Info Note */}
-            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-xs text-amber-800">
-                    <span className="font-semibold">Note:</span> This only
-                    removes synced data from Resend. Local categories and client
-                    data remain intact. Use this to clean up Resend audiences
-                    after switching send modes or when categories are no longer
-                    needed for broadcast sending.
-                </p>
-            </div>
+           
         </div>
     );
 }

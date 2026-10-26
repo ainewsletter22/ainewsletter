@@ -204,22 +204,18 @@ export default function ManageClients() {
         }
 
         try {
-            // Step 1: create minimal record (server only accepts business_name on create)
-            const createdResp = await clientService.addClientManual({
+            // Step 1: create client with all required fields including category
+            const createPayload: any = {
                 business_name: client.businessName,
-            });
+                client_cat_id: selectedFolder.id,
+            };
+            if (client.email) createPayload.email = client.email;
+            if (client.phone) createPayload.phone = client.phone;
+            if (client.website) createPayload.website = client.website;
+
+            const createdResp = await clientService.addClientManual(createPayload);
             const createdId = createdResp?.data?.id;
             if (!createdId) throw new Error("Failed to get created client id");
-
-            // Step 2: update the newly created client with rest of fields
-            const updatePayload: ClientUpdatePayload = {};
-            if (client.email) updatePayload.email = client.email;
-            if (client.phone) updatePayload.phone = client.phone;
-            if (client.website) updatePayload.website = client.website;
-            // use server-accepted category key
-            updatePayload.client_cat_id = selectedFolder.id;
-
-            await clientService.updateClient(createdId, updatePayload);
 
             // Refresh UI and close modal only on success
             fetchClients(selectedFolder.id);
@@ -357,13 +353,37 @@ export default function ManageClients() {
             });
         }
 
+        // Check for duplicate emails within the folder
+        const existingClients = await clientService.getSavedClients(selectedFolder.id);
+        const existingEmails = new Set(
+            existingClients.map((c) => (c.email || c.email_1 || "").trim().toLowerCase()),
+        );
+
+        const duplicates: string[] = [];
+        const filteredClients = clients.filter((client) => {
+            const email = (client.email || "").trim().toLowerCase();
+            if (email && existingEmails.has(email)) {
+                duplicates.push(email);
+                return false;
+            }
+            return true;
+        });
+
+        if (duplicates.length > 0) {
+            setIsImporting(false);
+            alert(
+                `${duplicates.length} client(s) skipped due to duplicate emails in this folder: ${duplicates.slice(0, 5).join(", ")}${duplicates.length > 5 ? "..." : ""}`,
+            );
+            if (filteredClients.length === 0) return;
+        }
+
         try {
             await clientService.addClientsBatchManual(
-                clients,
+                filteredClients,
                 selectedFolder.id,
             );
             setIsImporting(false);
-            handleImportSuccess(clients.length);
+            handleImportSuccess(filteredClients.length);
         } catch (error) {
             setIsImporting(false);
             const axiosError = error as

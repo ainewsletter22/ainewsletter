@@ -3,7 +3,7 @@ import { clientService } from "../services/clientService";
 
 // Types
 interface ApiClient {
-    id: string;
+    id: number;
     business_name: string;
     email: string;
     phone: string;
@@ -12,7 +12,7 @@ interface ApiClient {
 }
 
 interface Client {
-    id: string;
+    id: number;
     businessName: string;
     email: string;
     phone: string;
@@ -56,7 +56,7 @@ export default function LatestClients() {
     useEffect(() => {
         async function fetchClients() {
             try {
-                const data: ApiClient[] = await clientService.getClients();
+                const data: ApiClient[] = await clientService.getLatestClients();
 
                 const formattedClients: Client[] = data.map(
                     ({ business_name, ...client }) => ({
@@ -65,15 +65,7 @@ export default function LatestClients() {
                     }),
                 );
 
-                const latestFive: Client[] = [...formattedClients]
-                    .sort(
-                        (a, b) =>
-                            new Date(b.createdAt).getTime() -
-                            new Date(a.createdAt).getTime(),
-                    )
-                    .slice(0, 5);
-
-                setClients(latestFive);
+                setClients(formattedClients);
             } catch (err) {
                 console.error("Failed to fetch clients:", err);
                 setError("Could not load clients.");
