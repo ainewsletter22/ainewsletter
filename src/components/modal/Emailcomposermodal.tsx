@@ -2471,7 +2471,7 @@ function ComposeStep({
                 {/* Selected recipient chips */}
                 <div className="flex flex-wrap gap-2 flex-1 items-center">
                   {form.clientCategoryIds.map(catId => {
-                    const cat = categories.find(c => c.id === catId);
+                    const cat = categories?.find(c => c.id === catId);
                     if (!cat) return null;
                     return (
                       <span
@@ -2506,10 +2506,10 @@ function ComposeStep({
                   </button>
                   {showRecipientDropdown && (
                     <div className="absolute top-full right-[-100px] mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-[100] max-h-60 overflow-y-auto">
-                      {categories.length === 0 ? (
+                      {categories?.length === 0 ? (
                         <p className="text-sm text-gray-400 p-3">No categories available</p>
                       ) : (
-                        categories.map(cat => {
+                        categories?.map(cat => {
                           const isSelected = form.clientCategoryIds.includes(cat.id);
                           const isBroadcast = brand?.sendVia === "broadcast";
                           const exceedsLimit = isBroadcast && cat.count && cat.count > 250000;
@@ -2958,7 +2958,7 @@ function ComposeStep({
 // ─── Confirm Step ─────────────────────────────────────────────────────────────
 
 function ConfirmStep({
-  form, onChange, onSend, sent, categories, isSending, sendError, sendVia, isSingleClientSend, onClose, broadcastResults,
+  form, onChange, onSend, sent, categories, isSending, sendError, isSingleClientSend, onClose, broadcastResults,
 }: {
   form: ConfirmForm;
   onChange: <K extends keyof ConfirmForm>(k: K, v: ConfirmForm[K]) => void;
@@ -2967,7 +2967,6 @@ function ConfirmStep({
   categories: Category[];
   isSending: boolean;
   sendError: string | null;
-  sendVia?: SendVia;
   isSingleClientSend?: boolean;
   onClose?: () => void;
   broadcastResults: any[] | null;
