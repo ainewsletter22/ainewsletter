@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, memo, type ReactNode, type ChangeEvent, type MouseEvent } from "react";
-import type { ComposeForm, ConfirmForm, ComposerAttachment, TemplateLayoutBlock, Brand, SendVia } from "../../types/Types";
+import type { ComposeForm, ConfirmForm, ComposerAttachment, TemplateLayoutBlock, Brand } from "../../types/Types";
 import type { Category } from "../../types/domain";
 import { useAuthStore } from "../../store/useAuthStore";
 import { lookupService, type LookupItem } from "../../services/lookupService";
@@ -3858,7 +3858,6 @@ export function EmailComposerModal({ onClose, prefilled, templateId, brand, draf
             categories={categories}
             isSending={isSending}
             sendError={sendError}
-            sendVia={brand?.sendVia}
             isSingleClientSend={isSingleClientSend}
             onClose={onClose}
             broadcastResults={broadcastResults}
