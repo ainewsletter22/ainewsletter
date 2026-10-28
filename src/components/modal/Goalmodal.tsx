@@ -9,7 +9,7 @@ import type { ApiListItem } from "../../types/domain";
 interface GoalModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onContinue: (goal: string | string[]) => void;
+  onContinue: (goal: string | string[], path:string) => void;
   onDashboard: () => void;
 }
 
@@ -18,6 +18,7 @@ interface GoalOption {
   title: string;
   description: string;
   icon: string;
+  path: string;
 }
 
 export default function GoalModal({ isOpen, onClose, onContinue, onDashboard }: GoalModalProps) {
@@ -32,20 +33,24 @@ export default function GoalModal({ isOpen, onClose, onContinue, onDashboard }: 
           const name = g.name.toLowerCase();
           let icon = aiWizard; // Default fallback
           let desc = g.description || "Harness the power of AI.";
+          let path = "/" // default link
 
           if (name.includes("finder") || name.includes("client")) {
             icon = aiPortrait;
             desc = "AI identifies potential clients through data analysis.";
+            path = "/find-clients"
           } else if (name.includes("newsletter") || name.includes("email")) {
             icon = logoBAW;
             desc = "Enhance engagement with automated AI emails.";
+            path = "/news-letter/brands"
           }
 
           return {
             id: g.id.toString(),
             title: g.name,
             description: desc,
-            icon: icon
+            icon: icon,
+            path: path
           };
         });
         setBackendGoals(mapped);
@@ -87,34 +92,41 @@ export default function GoalModal({ isOpen, onClose, onContinue, onDashboard }: 
         </h2>
 
         {/* Goal cards */}
-        <div className="grid grid-cols-3 gap-3 mb-8">
-          {backendGoals.map((goal) => (
-            <button
-              key={goal.id}
-              onClick={() => setSelected(goal.id)}
-              className={`flex flex-col items-center text-center p-4 rounded-xl border-2 transition-all ${
-                selected === goal.id
-                  ? "border-blue-500 bg-blue-50"
-                  : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
-              }`}
-            >
-              <img src={goal.icon} className="mb-3 w-20" height="auto" alt="" />
-              <p
-                className={`text-sm font-semibold mb-1.5 ${
-                  selected === goal.id ? "text-blue-600" : "text-gray-800"
+        <div className="overflow-x-auto scrollbar-thin w-full mb-8" >
+          <div className="grid grid-cols-3 gap-3 w-full min-w-[600px] ">
+            {backendGoals.map((goal) => (
+              <button
+                key={goal.id}
+                onClick={() => {setSelected(goal.id);
+                }}
+                className={`flex flex-col items-center text-center p-4 rounded-xl border-2 transition-all ${
+                  selected === goal.id
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
                 }`}
               >
-                {goal.title}
-              </p>
-              <p className="text-xs text-gray-500 leading-relaxed">{goal.description}</p>
-            </button>
-          ))}
+                <img src={goal.icon} className="mb-3 w-20" height="auto" alt="" />
+                <p
+                  className={`text-sm font-semibold mb-1.5 ${
+                    selected === goal.id ? "text-blue-600" : "text-gray-800"
+                  }`}
+                >
+                  {goal.title}
+                </p>
+                <p className="text-xs text-gray-500 leading-relaxed">{goal.description}</p>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Actions */}
         <div className="flex items-center justify-center gap-3">
           <button
-            onClick={() => onContinue(selected)}
+            onClick={() => {
+    const selectedGoal = backendGoals.find((g) => g.id === selected);
+    if (!selectedGoal) return;
+    onContinue(selectedGoal.id, selectedGoal.path);
+  }}
             className="px-8 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg text-sm transition-colors flex items-center gap-2"
           >
             Continue <span className="text-base">→</span>

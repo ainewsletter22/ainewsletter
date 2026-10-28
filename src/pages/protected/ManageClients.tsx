@@ -40,7 +40,6 @@ function mapSavedClient(c: SavedClientRecord): ManagedClient {
         facebook: c.facebook_url || c.facebook || undefined,
         twitter: c.twitter_url || c.twitter || c.x_url || undefined,
         instagram: c.instagram_url || c.instagram || undefined,
-        yelp: c.yelp_url || c.yelp || undefined,
         group: c.contacted ? "Contacted" : "Not Contacted",
         emailsSent: c.emails_count || 0,
     };

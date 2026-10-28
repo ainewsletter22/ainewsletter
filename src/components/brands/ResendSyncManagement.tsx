@@ -110,7 +110,7 @@ export function ResendSyncManagement({
             <div className="mb-4 flex flex-col sm:flex-row sm:items-center">
                 <div>
                     <h3 className="text-sm font-semibold text-gray-900">
-                        Resend Sync Management
+                        Sync Management
                     </h3>
                     <p className="text-xs text-gray-500 mt-1">
                         Sync client categories to Resend (Max {MAX_SYNCED_CATEGORIES} categories per plan)

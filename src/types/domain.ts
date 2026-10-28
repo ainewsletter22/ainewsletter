@@ -71,8 +71,6 @@ export interface RawLead {
   facebook?: string | null;
   linkedin_url?: string | null;
   linkedin?: string | null;
-  yelp_url?: string | null;
-  yelp?: string | null;
   gmb_photos?: string | number | null;
   rating?: string | number | null;
   reviews_count?: number | string | null;
@@ -98,8 +96,6 @@ export interface SavedClientRecord {
   x_url?: string | null;
   instagram_url?: string | null;
   instagram?: string | null;
-  yelp_url?: string | null;
-  yelp?: string | null;
   contacted?: boolean | number | null;
   emails_count?: number | null;
   client_cat_id?: number | string | null;
@@ -115,7 +111,6 @@ export interface ManagedClient {
   facebook?: string;
   twitter?: string;
   instagram?: string;
-  yelp?: string;
   group: "Contacted" | "Not Contacted";
   emailsSent: number;
 }

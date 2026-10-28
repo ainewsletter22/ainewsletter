@@ -91,14 +91,13 @@ export default function DashboardHeader() {
 
             <header className="w-full bg-white border-b border-gray-100 px-4 lg:px-6 py-4 lg:py-7 flex flex-col lg:flex-row lg:items-center justify-between sticky top-0 z-40 gap-4 lg:gap-0">
                 <div
-                    className="flex items-center justify-between w-full lg:w-auto cursor-pointer"
-                    onClick={() => {
-                        navigate("/");
-                    }}
+                    className="flex items-center justify-between w-full lg:w-auto "
                 >
                     {/* Logo */}
-                    <div className="flex items-center">
-                        <Logo />
+                    <div className="flex items-center cursor-pointer"  onClick={() => {
+                        navigate("/");
+                    }}>
+                        < Logo />
                     </div>
 
                     {/* Right: bell + avatar + hamburger for mobile */}
@@ -135,7 +134,7 @@ export default function DashboardHeader() {
 
                         {/* Hamburger toggle */}
                         <button
-                            className="p-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                            className="p-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors cursor-pointer"
                             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                         >
                             <svg

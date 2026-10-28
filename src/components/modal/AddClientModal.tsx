@@ -11,7 +11,6 @@ interface Client {
     facebook?: string;
     twitter?: string;
     instagram?: string;
-    yelp?: string;
     group: "Contacted" | "Not Contacted";
     emailsSent: number;
 }
