@@ -224,7 +224,10 @@ export const brandService = {
       newsletter_badge?: boolean;
     }
   ): Promise<Brand> {
+    console.log("[brandService] updateFooterSettings called with:", { id, settings });
     const response = await apiClient.patch(`/brand/update-one/${id}`, settings);
+    console.log("[brandService] API response:", response.data);
+    console.log("[brandService] newsletter_badge in response:", response.data.data?.newsletter_badge);
     return response.data.data;
   },
 

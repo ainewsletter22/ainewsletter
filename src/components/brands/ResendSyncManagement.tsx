@@ -66,11 +66,11 @@ export function ResendSyncManagement({
 
             setMessage({
                 type: "success",
-                text: `Successfully removed synced data for ${selectedCategories.length} categories from Resend`,
+                text: `Successfully removed synced data for ${selectedCategories.length} categories from Email Server`,
             });
             setSelectedCategories([]);
         } catch (error: any) {
-            console.error("Failed to delete from Resend:", error);
+            console.error("Failed to delete from Email Server:", error);
 
             const errorMessage = error?.response?.data?.message || error?.message || "Failed to remove synced data from Resend. Please try again.";
             setMessage({
@@ -110,10 +110,10 @@ export function ResendSyncManagement({
             <div className="mb-4 flex flex-col sm:flex-row sm:items-center">
                 <div>
                     <h3 className="text-sm font-semibold text-gray-900">
-                        Resend Sync Management
+                        Email Server Sync Management
                     </h3>
                     <p className="text-xs text-gray-500 mt-1">
-                        Sync client categories to Resend (Max {MAX_SYNCED_CATEGORIES} categories per plan)
+                        Sync client categories to Email Server (Max {MAX_SYNCED_CATEGORIES} categories per plan)
                     </p>
                     <p className="text-xs text-gray-400 mt-0.5">
                         Selected: {selectedCategories.length}/{MAX_SYNCED_CATEGORIES}

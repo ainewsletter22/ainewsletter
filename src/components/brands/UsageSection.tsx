@@ -276,7 +276,7 @@ export function UsageSection({ brandId, sendVia, onSendViaChange, onUpgrade }: U
               <div>
                 <p className="text-sm font-semibold text-gray-900">Dedicated IPs – $45 / Mo</p>
                 <p className="mt-0.5 text-xs text-gray-500 leading-5 max-w-sm">
-                  Resend will provision, warm up, monitor and auto-scale the dedicated IP to ensure consistent deliverability and
+                  Email Server will provision, warm up, monitor and auto-scale the dedicated IP to ensure consistent deliverability and
                   performance.
                 </p>
                 <p className="mt-1 text-xs text-gray-400">Check if a dedicated IP would be right for you</p>

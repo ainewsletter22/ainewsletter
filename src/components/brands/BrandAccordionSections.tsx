@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import trashIcon from "../../assets/trashIcon.svg";
 import { Btn } from "../Modalshells";
 import { REGIONS } from "../../types/Mockdata";
@@ -16,6 +16,7 @@ import type {
 } from "../../types/Types";
 import { SendModeSwitch } from "./SendModeSwitch";
 import { ResendSyncManagement } from "./ResendSyncManagement";
+import { domainService } from "../../services/domainService";
 
 type RegionOption = {
     id: number;
@@ -312,8 +313,6 @@ export function AddDomainSection({
     //     }
     // }, [domains, step]);
 
-    console.log(setPendingDomain);
-
     // Returns a plain ISO country code (e.g. "US") for a given region label,
     // or null if nothing matched — FlagIcon renders a globe icon for null.
     const findRegionIsoCode = (label: string): string | null => {
@@ -357,6 +356,8 @@ export function AddDomainSection({
         try {
             const domain = await onAddDomain(name.trim(), Number(region));
             if (domain) {
+                setPendingDomain(domain);
+
                 // Check if DNS records are available
                 const hasDnsRecords =
                     domain.dkim?.content ||
@@ -749,7 +750,7 @@ export function AddDomainSection({
                         onChange={(e) => setStatusFilter(e.target.value)}
                         className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
                     >
-                        {["All Statuses", "Pending", "Verified", "Failed"].map(
+                        {["All Statuses", "not_started", "pending", "verified", "partially_verified", "partially_failed", "failed", "temporary_failure"].map(
                             (s) => (
                                 <option key={s}>{s}</option>
                             ),
@@ -802,9 +803,9 @@ export function AddDomainSection({
                                 <td className="px-4 py-3">
                                     <span
                                         className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                                            d.status === "Verified"
+                                            d.status === "verified"
                                                 ? "bg-green-100 text-green-700"
-                                                : d.status === "Failed"
+                                                : d.status === "failed"
                                                   ? "bg-red-100 text-red-600"
                                                   : "bg-amber-100 text-amber-600"
                                         }`}
@@ -821,9 +822,11 @@ export function AddDomainSection({
                                 <td className="px-4 py-3">
                                     <div className="flex items-center gap-2">
                                         <button
-                                            onClick={() =>
-                                                setViewRecordsDomain(d)
-                                            }
+                                            onClick={async () => {
+                                                // Fetch full domain data with CNAMEs from /domain/get-one/:id
+                                                const fullDomain = await domainService.getDomain(d.id);
+                                                setViewRecordsDomain(fullDomain || d);
+                                            }}
                                             className="p-2 rounded-lg hover:bg-blue-100 text-gray-400 hover:text-blue-500 transition-colors"
                                             title="View DNS Records"
                                         >
@@ -950,6 +953,20 @@ export function AddDomainSection({
                             />
                             Enable Receiving
                         </label>
+                    </div>
+
+                    <div className="mt-6">
+                        <button
+                            onClick={async () => {
+                                if (!viewRecordsDomain) return;
+                                await onVerifyDomain(viewRecordsDomain.id);
+                                setViewRecordsDomain(null);
+                            }}
+                            disabled={saving}
+                            className="flex items-center gap-2 border border-green-500 text-green-600 text-sm font-semibold px-4 py-2.5 rounded-full hover:bg-green-50 hover:border-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {saving ? "Processing..." : "✓ I've added the records"}
+                        </button>
                     </div>
                 </div>
             )}
@@ -1389,8 +1406,28 @@ export function FooterSettingsSection({
         getInitialValues(footer),
     );
 
+    // Track previous footer to detect actual server changes vs re-renders
+    const prevFooterRef = useRef<FooterSettings | null>(null);
+
     useEffect(() => {
-        setValues(getInitialValues(footer));
+        console.log("[BrandAccordionSections] Component received footer prop:", footer);
+        // Only update if the footer prop actually changed from the server
+        // (not just a re-render with the same data)
+        const footerChanged =
+            !prevFooterRef.current ||
+            prevFooterRef.current.removeBadge !== footer.removeBadge ||
+            prevFooterRef.current.unsubscribeText !== footer.unsubscribeText ||
+            prevFooterRef.current.companyName !== footer.companyName ||
+            prevFooterRef.current.address !== footer.address ||
+            prevFooterRef.current.cityStateZip !== footer.cityStateZip;
+
+        if (footerChanged) {
+            const newValues = getInitialValues(footer);
+            console.log("[BrandAccordionSections] Footer changed from server, updating values:", newValues);
+            console.log("[BrandAccordionSections] Backend removeBadge:", footer.removeBadge);
+            setValues(newValues);
+            prevFooterRef.current = footer;
+        }
     }, [footer]);
 
     return (

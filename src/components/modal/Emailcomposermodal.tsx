@@ -10,7 +10,7 @@ import { clientService } from "../../services/clientService";
 import { deleteUploadedAsset, uploadAsset } from "../../services/apiClient";
 import { validateBroadcastSelection, getValidationErrorMessage } from "../../utils/sendValidation";
 import { draftService } from "../../services/draftService";
-import { appendFooterToEmail } from "../../utils/emailFooter";
+import { appendFooterToEmail, generateEmailFooter } from "../../utils/emailFooter";
 import { useParams } from "react-router-dom";
 import { ComposerRichTextEditor, type ComposerEditorHandle } from "./composer-tiptap/ComposerRichTextEditor";
 import { ComposerToolbar } from "./composer-tiptap/ComposerToolbar";
@@ -18,6 +18,7 @@ import { useAiWriterBridge } from "./composer-tiptap/useAiWriterBridge";
 import { EmailTemplateSnapshot } from "../Emailtemplatesnapshot";
 import addFile from "../../assets/addFile.png"
 import addImage from "../../assets/addImage.png"
+import defaultLogo from "../../assets/mainLogo.png"
 import aiWriter from "../../assets/aiWriter.png"
 import aiWriterBlue from "../../assets/aiWriterBlue.png"
 
@@ -692,7 +693,8 @@ function TemplatePreviewCanvas({
   enableInlineImages = false,
   onToggleSectionRemoved,
   onRestoreImageSlot,
-  boxRefs
+  boxRefs,
+  footerHtml = "",
 }: {
   templateId?: number;
   blocks: TemplateLayoutBlock[];
@@ -712,6 +714,7 @@ function TemplatePreviewCanvas({
   onToggleSectionRemoved?: (blockId: string) => void;
   onRestoreImageSlot?: (blockId: string) => void;
   boxRefs?: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
+  footerHtml?: string;
 }) {
   const bodyBlocks = blocks.filter((block) => block.role === "body");
   const imageBlocks = blocks.filter((block) => block.role === "image");
@@ -912,6 +915,13 @@ function TemplatePreviewCanvas({
   const renderFooterBar = (onSelectionChange?: (blockId: string, handle: ComposerEditorHandle, selectedText: string) => void) => (
     <div className="mt-6 border-t border-slate-100 bg-slate-50 px-6 py-4 text-center">
       {renderEditableText(blocks.find((block) => block.role === "footer"), "text-xs leading-5 text-slate-400 text-center", "Add your footer", onSelectionChange, onActivateBlock)}
+      {/* Append compulsory footer (non-editable) */}
+      {footerHtml && (
+        <div
+          className="mt-4"
+          dangerouslySetInnerHTML={{ __html: footerHtml }}
+        />
+      )}
     </div>
   );
 
@@ -1385,6 +1395,7 @@ function EmailPreviewPane({
   templateId,
   templateLayout,
   onDownloadAttachment,
+  brand,
 }: {
   form: ComposeForm;
   brandName: string;
@@ -1393,11 +1404,27 @@ function EmailPreviewPane({
   templateId?: number;
   templateLayout: TemplateLayoutBlock[];
   onDownloadAttachment?: (attachment: ComposerAttachment) => void;
+  brand?: Brand | null;
 }) {
   const senderName = brandName || form.name || "Your name";
   const senderEmail = form.from || "your@email.com";
   const recipient = form.to || "recipient@email.com";
   const isBlankTemplate = !templateId || templateId === 0;
+
+  // Generate compulsory footer for preview
+  const footerSettings = brand?.unsuscribe_information || brand?.footer_address || brand?.newsletter_badge !== undefined ? {
+    unsubscribeText: brand?.unsuscribe_information || "You are receiving this email because you opted in via our site.\n\nWant to change how you receive these emails?\nYou can unsubscribe from this list.",
+    companyName: brand?.footer_address?.split('\n')[0] || "Company Name",
+    address: brand?.footer_address?.split('\n')[1] || "99 Street Address",
+    cityStateZip: brand?.footer_address?.split('\n')[2] || "City, STATE 000-000",
+    removeBadge: brand?.newsletter_badge === false, // Hide badge only if newsletter_badge is explicitly false
+  } : null;
+
+  console.log("[EmailPreviewPane] brand.newsletter_badge:", brand?.newsletter_badge);
+  console.log("[EmailPreviewPane] brand.logo:", brand?.logo);
+  console.log("[EmailPreviewPane] footerSettings:", footerSettings);
+  const footerHtml = footerSettings ? generateEmailFooter(footerSettings, "campaign", brand?.logo || defaultLogo) : "";
+  console.log("[EmailPreviewPane] footerHtml generated:", footerHtml.includes("Ai Newsletter") ? "Badge present" : "Badge missing");
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#f2f6fc] px-6 py-8">
@@ -1431,7 +1458,7 @@ function EmailPreviewPane({
             className={`px-6 pb-6 text-[15px] leading-relaxed text-gray-800 ${RICH_TEXT_DISPLAY_CLASS}`}
             style={{ fontFamily: "Arial, Helvetica, sans-serif", whiteSpace: "pre-wrap" }}
             dangerouslySetInnerHTML={{
-              __html: `<style>img{display:inline-block;vertical-align:middle;border-radius:8px;cursor:pointer;margin:0 4px;}</style>` + (normalizeRichTextContent(form.body) ?? '<p style="color:#9CA3AF;">This email is empty.</p>'),
+              __html: `<style>img{display:inline-block;vertical-align:middle;border-radius:8px;cursor:pointer;margin:0 4px;}</style>` + (normalizeRichTextContent(form.body) ?? '<p style="color:#9CA3AF;">This email is empty.</p>') + footerHtml,
             }}
           />
         ) : (
@@ -1444,6 +1471,7 @@ function EmailPreviewPane({
               blocks={templateLayout}
               html={form.body}
               attachmentCount={attachments.length}
+              footerHtml={footerHtml}
             />
           </div>
         )}
@@ -1479,7 +1507,7 @@ function EmailPreviewPane({
 // ─── Compose Step ─────────────────────────────────────────────────────────────
 
 function ComposeStep({
-    form, onChange, onNext, brandId, templateId, templateLayout, onTemplateLayoutChange, onRegisterCleanup, onSwitchToBlankTemplate, onSaveDraft, isAutoSaving, prefilled, categories: _categories, draftId,
+    form, onChange, onNext, brandId, templateId, templateLayout, onTemplateLayoutChange, onRegisterCleanup, onSwitchToBlankTemplate, onSaveDraft, isAutoSaving, prefilled, categories, draftId, brand,
   }: {
     form: ComposeForm;
     onChange: <K extends keyof ComposeForm>(k: K, v: ComposeForm[K]) => void;
@@ -1504,10 +1532,22 @@ function ComposeStep({
       footer?: string;
       address?: string;
     };
-    categories?: { id: number; name: string }[];
+    categories?: Category[];
     draftId?: number;
+    brand?: Brand | null;
   }) {
   const isBlankTemplate = !templateId || templateId === 0;
+
+  // Generate compulsory footer for editor view (non-editable)
+  const footerSettings = brand?.unsuscribe_information || brand?.footer_address || brand?.newsletter_badge !== undefined ? {
+    unsubscribeText: brand?.unsuscribe_information || "You are receiving this email because you opted in via our site.\n\nWant to change how you receive these emails?\nYou can unsubscribe from this list.",
+    companyName: brand?.footer_address?.split('\n')[0] || "Company Name",
+    address: brand?.footer_address?.split('\n')[1] || "99 Street Address",
+    cityStateZip: brand?.footer_address?.split('\n')[2] || "City, STATE 000-000",
+    removeBadge: brand?.newsletter_badge === false, // Hide badge only if newsletter_badge is explicitly false
+  } : null;
+
+  const footerHtml = footerSettings ? generateEmailFooter(footerSettings, "campaign", brand?.logo || defaultLogo) : "";
 
   const [showAIWriter, setShowAIWriter] = useState(false);
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
@@ -1565,6 +1605,7 @@ function ComposeStep({
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [showImagePanel, setShowImagePanel] = useState(false);
   const [showAttachmentsPanel, setShowAttachmentsPanel] = useState(false);
+  const [showRecipientDropdown, setShowRecipientDropdown] = useState(false);
 
   useEffect(() => {
     if (!selectedBlankImageSrc || !form.body) return;
@@ -2424,6 +2465,93 @@ function ComposeStep({
                 <span>{brandFromEmail || form.from || "your@email.com"}</span>
               </div>
             </div>
+            <div className="flex items-start gap-5 w-full max-w-2xl">
+              <div className="text-xs text-gray-500 pt-2 shrink-0 w-8">To:</div>
+              <div className="flex-1 flex items-center gap-2 min-w-0">
+                {/* Selected recipient chips */}
+                <div className="flex flex-wrap gap-2 flex-1 items-center">
+                  {form.clientCategoryIds.map(catId => {
+                    const cat = categories.find(c => c.id === catId);
+                    if (!cat) return null;
+                    return (
+                      <span
+                        key={cat.id}
+                        className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-sm px-3 py-1 rounded-full shrink-0"
+                      >
+                        {cat.name}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onChange("clientCategoryIds", form.clientCategoryIds.filter(id => id !== cat.id));
+                          }}
+                          className="ml-1 text-blue-400 hover:text-blue-600"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+                {/* Recipient dropdown icon */}
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowRecipientDropdown(!showRecipientDropdown)}
+                    className="text-gray-400 hover:text-gray-600 p-1"
+                    title="Add recipients"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {showRecipientDropdown && (
+                    <div className="absolute top-full right-[-100px] mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-lg z-[100] max-h-60 overflow-y-auto">
+                      {categories.length === 0 ? (
+                        <p className="text-sm text-gray-400 p-3">No categories available</p>
+                      ) : (
+                        categories.map(cat => {
+                          const isSelected = form.clientCategoryIds.includes(cat.id);
+                          const isBroadcast = brand?.sendVia === "broadcast";
+                          const exceedsLimit = isBroadcast && cat.count && cat.count > 250000;
+                          const wouldExceedMaxCategories = isBroadcast && !isSelected && form.clientCategoryIds.length >= 3;
+                          const isDisabled = exceedsLimit || wouldExceedMaxCategories;
+
+                          return (
+                            <button
+                              key={cat.id}
+                              type="button"
+                              disabled={isDisabled}
+                              onClick={() => {
+                                if (!isDisabled) {
+                                  onChange("clientCategoryIds", [...form.clientCategoryIds, cat.id]);
+                                  setShowRecipientDropdown(false);
+                                }
+                              }}
+                              className={`w-full text-left px-3 py-2 hover:bg-gray-50 border-b border-gray-100 last:border-0 ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-gray-700">{cat.name}</span>
+                                {cat.count !== undefined && cat.count !== null && (
+                                  <span className="text-xs text-gray-500">
+                                    ({cat.count.toLocaleString()})
+                                  </span>
+                                )}
+                              </div>
+                              {exceedsLimit && (
+                                <span className="text-xs text-red-600 block mt-1">Exceeds 250k limit</span>
+                              )}
+                              {wouldExceedMaxCategories && (
+                                <span className="text-xs text-amber-600 block mt-1">Max 3 categories</span>
+                              )}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -2466,6 +2594,7 @@ function ComposeStep({
           templateId={templateId}
           templateLayout={templateLayout}
           onDownloadAttachment={handleDownloadAttachment}
+          brand={brand}
         />
       ) : (
         <>
@@ -2624,6 +2753,7 @@ function ComposeStep({
                     onToggleSectionRemoved={toggleSectionRemoved}
                     onRestoreImageSlot={handleRestoreImageSlot}
                     boxRefs={imageBoxRefs}
+                    footerHtml={footerHtml}
                   />
                 )}
               </div>
@@ -2930,77 +3060,6 @@ function ConfirmStep({
 
         <hr className="border-gray-100 mb-6" />
 
-        {/* Recipients - hide for single client send */}
-        {!isSingleClientSend && (
-          <div className="mb-6">
-            <label className="text-sm font-medium text-gray-700 mb-2 block">
-              Recipients
-              {sendVia === "broadcast" && (
-                <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                  Broadcast Mode: Max 3 categories, 250k each
-                </span>
-              )}
-            </label>
-            <div className="border border-gray-200 rounded-xl p-3 max-h-40 overflow-y-auto">
-              {categories.length === 0 ? (
-                <p className="text-sm text-gray-400">No categories available</p>
-              ) : (
-                categories.map(cat => {
-                  const isSelected = form.clientCategoryIds.includes(cat.id);
-                  const isBroadcast = sendVia === "broadcast";
-                  const exceedsLimit = isBroadcast && cat.count && cat.count > 250000;
-                  const wouldExceedMaxCategories = isBroadcast && !isSelected && form.clientCategoryIds.length >= 3;
-                  const isDisabled = exceedsLimit || wouldExceedMaxCategories;
-
-                  return (
-                    <label
-                      key={cat.id}
-                      className={`flex items-center gap-2 py-2 cursor-pointer ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        disabled={isDisabled}
-                        onChange={e => {
-                          if (e.target.checked) {
-                            onChange("clientCategoryIds", [...form.clientCategoryIds, cat.id]);
-                          } else {
-                            onChange("clientCategoryIds", form.clientCategoryIds.filter(id => id !== cat.id));
-                          }
-                        }}
-                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
-                      />
-                      <div className="flex-1">
-                        <span className="text-sm text-gray-700">{cat.name}</span>
-                        {cat.count !== undefined && cat.count !== null && (
-                          <span className="text-xs text-gray-500 ml-2">
-                            ({cat.count.toLocaleString()} clients)
-                          </span>
-                        )}
-                      </div>
-                    {exceedsLimit && (
-                      <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                        Exceeds 250k limit
-                      </span>
-                    )}
-                    {wouldExceedMaxCategories && (
-                      <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                        Max 3 categories
-                      </span>
-                    )}
-                  </label>
-                );
-              })
-            )}
-          </div>
-          {sendVia === "broadcast" && form.clientCategoryIds.length > 0 && (
-            <p className="text-xs text-gray-500 mt-2">
-              {form.clientCategoryIds.length}/3 categories selected
-            </p>
-          )}
-        </div>
-        )}
-
         <button
           onClick={onSend}
           disabled={isSending || (isSingleClientSend ? false : form.clientCategoryIds.length === 0)}
@@ -3048,79 +3107,6 @@ function ConfirmStep({
           </button>
         </div>
       </div>
-
-      <hr className="border-gray-100 mb-6" />
-
-      {/* Recipients - hide for single client send */}
-      {!isSingleClientSend && (
-        <div className="mb-6">
-          <label className="text-sm font-medium text-gray-700 mb-2 block">
-            Recipients
-            {sendVia === "broadcast" && (
-              <span className="ml-2 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                Broadcast Mode: Max 3 categories, 250k each
-              </span>
-            )}
-          </label>
-          <div className="border border-gray-200 rounded-xl p-3 max-h-40 overflow-y-auto">
-            {categories.length === 0 ? (
-              <p className="text-sm text-gray-400">No categories available</p>
-            ) : (
-              categories.map(cat => {
-                const isSelected = form.clientCategoryIds.includes(cat.id);
-                const isBroadcast = sendVia === "broadcast";
-                const exceedsLimit = isBroadcast && cat.count && cat.count > 250000;
-                const wouldExceedMaxCategories = isBroadcast && !isSelected && form.clientCategoryIds.length >= 3;
-                const isDisabled = exceedsLimit || wouldExceedMaxCategories;
-
-                return (
-                  <label
-                    key={cat.id}
-                    className={`flex items-center gap-2 py-2 cursor-pointer ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      disabled={isDisabled}
-                      onChange={e => {
-                        if (e.target.checked) {
-                          onChange("clientCategoryIds", [...form.clientCategoryIds, cat.id]);
-                        } else {
-                          onChange("clientCategoryIds", form.clientCategoryIds.filter(id => id !== cat.id));
-                        }
-                      }}
-                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
-                    />
-                    <div className="flex-1">
-                      <span className="text-sm text-gray-700">{cat.name}</span>
-                      {cat.count !== undefined && cat.count !== null && (
-                        <span className="text-xs text-gray-500 ml-2">
-                          ({cat.count.toLocaleString()} clients)
-                        </span>
-                      )}
-                    </div>
-                    {exceedsLimit && (
-                      <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                        Exceeds 250k limit
-                      </span>
-                    )}
-                    {wouldExceedMaxCategories && (
-                      <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                      Max 3 categories
-                    </span>
-                  )}
-                </label>
-              );
-            })
-          )}
-        </div>
-        {sendVia === "broadcast" && form.clientCategoryIds.length > 0 && (
-          <p className="text-xs text-gray-500 mt-2">
-            {form.clientCategoryIds.length}/3 categories selected
-          </p>
-        )}
-      </div>
-      )}
 
       <hr className="border-gray-100 mb-6" />
 
@@ -3178,7 +3164,7 @@ function ConfirmStep({
 
       <button
         onClick={onSend}
-        disabled={form.clientCategoryIds.length === 0 || isSending}
+        disabled={isSending}
         className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         {isSending ? (
@@ -3258,6 +3244,7 @@ export function EmailComposerModal({ onClose, prefilled, templateId, brand, draf
     attachments: [], // Initialize empty, will be synced from local attachments state
     footer: prefilled?.footer ?? "",
     address: prefilled?.address ?? "",
+    clientCategoryIds: [], // Track selected recipient categories in compose step
   });
   const [categories, setCategories] = useState<Category[]>([]);
 
@@ -3841,11 +3828,16 @@ export function EmailComposerModal({ onClose, prefilled, templateId, brand, draf
             form={compose}
             onChange={(k, v) => setCompose(f => ({ ...f, [k]: v }))}
             onClose={handleModalClose}
-            onNext={() => setStep("confirm")}
+            onNext={() => {
+              // Sync recipients from compose to confirm step
+              setConfirm(prev => ({ ...prev, clientCategoryIds: compose.clientCategoryIds }));
+              setStep("confirm");
+            }}
             brandId={brandId ? Number(brandId) : undefined}
             templateId={effectiveTemplateId}
             templateLayout={templateLayout}
             categories={categories}
+            brand={brand}
             onTemplateLayoutChange={(value) => {
               setTemplateLayout(value);
             }}

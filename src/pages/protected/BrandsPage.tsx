@@ -240,7 +240,7 @@ export default function BrandsPage() {
             address: footerBlock.address ?? addressLines[1] ?? "",
             cityStateZip: footerBlock.cityStateZip ?? addressLines[2] ?? "",
             removeBadge:
-                footerBlock.removeBadge ?? b.newsletter_badge === false,
+                footerBlock.removeBadge ?? b.newsletter_badge === false, // Hide badge only if newsletter_badge is explicitly false
         };
     };
 
@@ -344,6 +344,44 @@ export default function BrandsPage() {
         } as Brand;
     };
 
+    const refreshActive = async (id: number) => {
+        try {
+            const updated = await brandService.getBrand(id);
+            console.log("[BrandsPage] Refreshed brand from API:", updated);
+            console.log("[BrandsPage] newsletter_badge from API:", updated?.newsletter_badge);
+            if (updated) {
+                const normalized = normalizeBrand(updated);
+
+                // Also load domains separately since brand API might not include them
+                try {
+                    const allDomains = await domainService.listDomains();
+                    const brandDomains = allDomains.filter(
+                        (d) => d.brand_id === id,
+                    );
+
+                    console.log(
+                        "[BrandsPage] Loaded domains for brand:",
+                        id,
+                        brandDomains,
+                    );
+
+                    setActiveBrand((prev) =>
+                        prev ? { ...normalized, domains: brandDomains } : normalized,
+                    );
+                } catch (domainError) {
+                    console.error(
+                        "Failed to load domains after brand refresh:",
+                        domainError,
+                    );
+                    // Still set the brand even if domains fail
+                    setActiveBrand(normalized);
+                }
+            }
+        } catch (error) {
+            console.error("Failed to refresh brand:", error);
+        }
+    };
+
     const fetchBrands = async (showLoading = true) => {
         if (showLoading) setLoading(true);
         try {
@@ -354,40 +392,6 @@ export default function BrandsPage() {
             console.error("Failed to load brands", error);
         } finally {
             if (showLoading) setLoading(false);
-        }
-    };
-
-    const refreshActive = async (id: number) => {
-        try {
-            const updated = await brandService.getBrand(id);
-            if (updated) setActiveBrand(normalizeBrand(updated));
-            await fetchBrands(false);
-        } catch (error) {
-            console.error(
-                "Failed to refresh brand after domain creation:",
-                error,
-            );
-            // Don't fail the entire operation if refresh fails - domain might have been created
-            // Try to load domains separately as a fallback
-            if (activeBrand) {
-                try {
-                    const allDomains = await domainService.listDomains();
-                    // Filter domains for this specific brand
-                    const brandDomains = allDomains.filter(
-                        (d) => d.brand_id === activeBrand.id,
-                    );
-                    setActiveBrand((prev) =>
-                        prev ? { ...prev, domains: brandDomains } : null,
-                    );
-                } catch (domainError) {
-                    console.error(
-                        "Failed to load domains as fallback:",
-                        domainError,
-                    );
-                }
-            }
-            // Just try to fetch brands list to show the updated state
-            await fetchBrands(false);
         }
     };
 
@@ -581,23 +585,7 @@ export default function BrandsPage() {
                                                             },
                                                         );
 
-                                                    // Immediately add the new domain to local state
-                                                    if (domain && activeBrand) {
-                                                        setActiveBrand(
-                                                            (prev) =>
-                                                                prev
-                                                                    ? {
-                                                                          ...prev,
-                                                                          domains:
-                                                                              [
-                                                                                  ...prev.domains,
-                                                                                  domain,
-                                                                              ],
-                                                                      }
-                                                                    : null,
-                                                        );
-                                                    }
-
+                                                    // Refresh the brand to get updated domains list
                                                     await refreshActive(
                                                         activeBrand.id,
                                                     );
@@ -677,63 +665,55 @@ export default function BrandsPage() {
                                                         "[BrandsPage] Verifying domain:",
                                                         domainId,
                                                     );
-                                                    // Try to get the specific domain to refresh its status
-                                                    try {
-                                                        const updatedDomain =
-                                                            await domainService.getDomain(
-                                                                domainId,
-                                                            );
-                                                        console.log(
-                                                            "[BrandsPage] Domain refreshed:",
-                                                            updatedDomain,
+                                                    // Call the verify endpoint
+                                                    const verifiedDomain =
+                                                        await domainService.verifyDomain(
+                                                            domainId,
                                                         );
-                                                        // Update the domains list with the refreshed domain
-                                                        if (
-                                                            updatedDomain &&
-                                                            activeBrand
-                                                        ) {
-                                                            setActiveBrand(
-                                                                (prev) =>
-                                                                    prev
-                                                                        ? {
-                                                                              ...prev,
-                                                                              domains:
-                                                                                  prev.domains.map(
-                                                                                      (
-                                                                                          d,
-                                                                                      ) =>
-                                                                                          d.id ===
-                                                                                          domainId
-                                                                                              ? updatedDomain
-                                                                                              : d,
-                                                                                  ),
-                                                                          }
-                                                                        : null,
-                                                            );
-                                                        }
-                                                    } catch (domainError) {
-                                                        console.error(
-                                                            "[BrandsPage] Failed to refresh domain:",
-                                                            domainError,
+                                                    console.log(
+                                                        "[BrandsPage] Domain verified:",
+                                                        verifiedDomain,
+                                                    );
+                                                    // Update the domains list with the verified domain
+                                                    if (
+                                                        verifiedDomain &&
+                                                        activeBrand
+                                                    ) {
+                                                        setActiveBrand(
+                                                            (prev) =>
+                                                                prev
+                                                                    ? {
+                                                                          ...prev,
+                                                                          domains:
+                                                                              prev.domains.map(
+                                                                                  (
+                                                                                      d,
+                                                                                  ) =>
+                                                                                      d.id ===
+                                                                                      domainId
+                                                                                          ? verifiedDomain
+                                                                                          : d,
+                                                                              ),
+                                                                      }
+                                                                    : null,
                                                         );
-                                                        // If domain refresh fails, try refreshing the whole brand
-                                                        try {
-                                                            await refreshActive(
-                                                                activeBrand.id,
-                                                            );
-                                                        } catch (brandError) {
-                                                            console.error(
-                                                                "[BrandsPage] Brand refresh also failed:",
-                                                                brandError,
-                                                            );
-                                                            // Even if refresh fails, the domain was already added locally, so continue
-                                                        }
                                                     }
                                                 } catch (error) {
                                                     console.error(
                                                         "Failed to verify domain:",
                                                         error,
                                                     );
+                                                    // If verification fails, try refreshing the whole brand
+                                                    try {
+                                                        await refreshActive(
+                                                            activeBrand.id,
+                                                        );
+                                                    } catch (brandError) {
+                                                        console.error(
+                                                            "[BrandsPage] Brand refresh failed after verification:",
+                                                            brandError,
+                                                        );
+                                                    }
                                                 } finally {
                                                     setSavingSection(null);
                                                 }
@@ -957,55 +937,11 @@ export default function BrandsPage() {
 
                                     <Accordion
                                         icon={icons.frame}
-                                        title="Footer Settings"
+                                        title="Unsubscribe Settings"
                                     >
                                         <FooterSettingsSection
                                             key={activeBrand.id}
-                                            footer={{
-                                                unsubscribeText:
-                                                    activeBrand.unsuscribe_information !==
-                                                        undefined &&
-                                                    activeBrand.unsuscribe_information !==
-                                                        null
-                                                        ? activeBrand.unsuscribe_information
-                                                        : "",
-                                                companyName:
-                                                    activeBrand.footer_address?.split(
-                                                        "\n",
-                                                    )[0] !== undefined &&
-                                                    activeBrand.footer_address?.split(
-                                                        "\n",
-                                                    )[0] !== null
-                                                        ? activeBrand.footer_address?.split(
-                                                              "\n",
-                                                          )[0]
-                                                        : "",
-                                                address:
-                                                    activeBrand.footer_address?.split(
-                                                        "\n",
-                                                    )[1] !== undefined &&
-                                                    activeBrand.footer_address?.split(
-                                                        "\n",
-                                                    )[1] !== null
-                                                        ? activeBrand.footer_address?.split(
-                                                              "\n",
-                                                          )[1]
-                                                        : "",
-                                                cityStateZip:
-                                                    activeBrand.footer_address?.split(
-                                                        "\n",
-                                                    )[2] !== undefined &&
-                                                    activeBrand.footer_address?.split(
-                                                        "\n",
-                                                    )[2] !== null
-                                                        ? activeBrand.footer_address?.split(
-                                                              "\n",
-                                                          )[2]
-                                                        : "",
-                                                removeBadge:
-                                                    activeBrand.newsletter_badge ===
-                                                    false, // Only true if newsletter_badge is explicitly false
-                                            }}
+                                            footer={activeBrand.footer}
                                             onCancel={() =>
                                                 setActiveBrand(null)
                                             }
@@ -1027,6 +963,10 @@ export default function BrandsPage() {
                                                             .filter(Boolean)
                                                             .join("\n"),
                                                     };
+                                                    console.log("[BrandsPage] Saving footer settings payload:", payload);
+                                                    console.log("[BrandsPage] removeBadge value from UI:", footer.removeBadge);
+                                                    console.log("[BrandsPage] newsletter_badge being sent to API:", payload.newsletter_badge);
+                                                    console.log("[BrandsPage] Expected: removeBadge=true means hide badge (newsletter_badge=false), removeBadge=false means show badge (newsletter_badge=true)");
                                                     await brandService.updateFooterSettings(
                                                         activeBrand.id,
                                                         payload,
@@ -1106,7 +1046,7 @@ export default function BrandsPage() {
 
                                     <Accordion
                                         icon={icons.bell}
-                                        title="Resend Sync Management"
+                                        title="Email Server Sync Management"
                                     >
                                         <ResendSyncSection
                                             brandId={activeBrand.id}

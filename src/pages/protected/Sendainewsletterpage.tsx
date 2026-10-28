@@ -266,11 +266,22 @@ export default function SendAINewsletterPage() {
 
       console.log("[SendAINewsletterPage] Campaign/Broadcast data:", campaignOrBroadcast);
 
+      // Get the current valid domains for this brand
+      const allDomains = await domainService.listDomains();
+      const brandDomains = allDomains.filter((d) => d.brand_id === brand.id);
+
+      // Use the campaign's domain_id if it exists and belongs to this brand, otherwise use the first available domain or undefined
+      const validDomainId = campaignOrBroadcast.domain_id && brandDomains.some(d => d.id === campaignOrBroadcast.domain_id)
+        ? campaignOrBroadcast.domain_id
+        : (brandDomains.length > 0 ? brandDomains[0].id : undefined);
+
+      console.log("[SendAINewsletterPage] Using domain_id:", validDomainId);
+
       // Create a new draft directly from the campaign/broadcast data
       // This doesn't rely on the original draft existing
       const draftPayload = {
         brand_id: brand.id,
-        domain_id: campaignOrBroadcast.domain_id || undefined,
+        domain_id: validDomainId,
         template_id: campaignOrBroadcast.template_id || undefined,
         from_name: campaignOrBroadcast.from_name || undefined,
         head: campaignOrBroadcast.head || undefined,

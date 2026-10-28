@@ -93,9 +93,10 @@ export interface EmailTemplateSnapshotProps {
   blocks?: TemplateLayoutBlock[] | null;
   html?: string | null;
   attachmentCount?: number;
+  footerHtml?: string;
 }
 
-export function EmailTemplateSnapshot({ templateId, blocks, html, attachmentCount = 0 }: EmailTemplateSnapshotProps) {
+export function EmailTemplateSnapshot({ templateId, blocks, html, attachmentCount = 0, footerHtml = "" }: EmailTemplateSnapshotProps) {
   const isBlank = !templateId || templateId === 0 || !blocks || blocks.length === 0;
 
   if (isBlank) {
@@ -106,7 +107,7 @@ export function EmailTemplateSnapshot({ templateId, blocks, html, attachmentCoun
         className={`px-6 py-6 text-[15px] leading-relaxed text-gray-800 ${RICH_TEXT_DISPLAY_CLASS}`}
         style={{ fontFamily: "Arial, Helvetica, sans-serif", whiteSpace: "pre-wrap" }}
         dangerouslySetInnerHTML={{
-          __html: `<style>img{display:inline-block;vertical-align:middle;border-radius:8px;cursor:pointer;margin:0 4px;}</style>` + (normalizeRichTextContent(html) || '<p style="color:#9CA3AF;">This email is empty.</p>'),
+          __html: `<style>img{display:inline-block;vertical-align:middle;border-radius:8px;cursor:pointer;margin:0 4px;}</style>` + (normalizeRichTextContent(html) || '<p style="color:#9CA3AF;">This email is empty.</p>') + footerHtml,
         }}
       />
     );
@@ -132,6 +133,20 @@ export function EmailTemplateSnapshot({ templateId, blocks, html, attachmentCoun
     footerBlock && !footerBlock.removed && footerBlock.text ? (
       <div className="mt-6 border-t border-slate-100 bg-slate-50 px-6 py-4 text-center">
         {renderBlockText(footerBlock, "text-xs leading-5 text-slate-400 text-center")}
+        {/* Append compulsory footer */}
+        {footerHtml && (
+          <div
+            className="mt-4"
+            dangerouslySetInnerHTML={{ __html: footerHtml }}
+          />
+        )}
+      </div>
+    ) : footerHtml ? (
+      // If no template footer but compulsory footer exists, show it standalone
+      <div className="mt-6 text-center">
+        <div
+          dangerouslySetInnerHTML={{ __html: footerHtml }}
+        />
       </div>
     ) : null;
   const Attachments =

@@ -29,7 +29,7 @@ export function generateEmailFooter(
       <span style="display: inline-block; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: #2563eb; background: transparent; padding: 4px 12px; border-radius: 9999px; border: 1px solid #3b82f6;">
         Powered by
         <span style="display: inline-block; vertical-align: middle; width: 16px; height: 16px; border-radius: 4px; color: white; font-size: 9px; font-weight: bold; line-height: 16px; text-align: center;">
-          <img src="${logoUrl}" alt="" style="width: 100%; height: 100%; display: block;" />
+          <img src="${logoUrl}" alt="" style="width: 100%; height: 100%; display: block; " />
         </span>
         <span style="color: black;">Ai Newsletter</span>
       </span>

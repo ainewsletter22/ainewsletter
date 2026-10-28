@@ -113,7 +113,7 @@ function ClientDetailView({
                         console.log('[ClientDetailView] All domains:', allDomains);
                         const brandsWithDomains = normalizedBrands.map(b => {
                             // Only include verified domains
-                            const brandDomains = allDomains.filter(d => d.brand_id === b.id && d.status === "Verified");
+                            const brandDomains = allDomains.filter(d => d.brand_id === b.id && d.status === "verified");
                             console.log(`[ClientDetailView] Brand ${b.id} (${b.name}) verified domains:`, brandDomains);
                             return { ...b, domains: brandDomains };
                         });

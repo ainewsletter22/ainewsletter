@@ -46,13 +46,13 @@ function BrandIdentityForm({ initial, onCancel, onSave, saving, saveLabel = "Sav
             className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           >
             <option value="">Select a verified domain</option>
-            {domains.filter(d => d.status === "Verified").map(domain => (
+            {domains.filter(d => d.status === "verified").map(domain => (
               <option key={domain.id} value={domain.name}>
                 {domain.name}
               </option>
             ))}
             {/* Include current value if it's not in the verified domains list */}
-            {values.fromName && !domains.filter(d => d.status === "Verified").some(d => d.name === values.fromName) && (
+            {values.fromName && !domains.filter(d => d.status === "verified").some(d => d.name === values.fromName) && (
               <option value={values.fromName}>{values.fromName}</option>
             )}
           </select>
