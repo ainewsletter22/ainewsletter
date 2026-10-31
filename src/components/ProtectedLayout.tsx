@@ -10,7 +10,7 @@ export default function ProtectedLayout() {
 
   // null = still checking, so the modal never flashes for users who have a plan
   const [hasPlan, setHasPlan] = useState<boolean | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userId) return;
