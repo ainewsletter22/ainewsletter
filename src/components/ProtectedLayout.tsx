@@ -10,7 +10,7 @@ export default function ProtectedLayout() {
 
   // null = still checking, so the modal never flashes for users who have a plan
   const [hasPlan, setHasPlan] = useState<boolean | null>(null);
-  // const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -37,23 +37,18 @@ export default function ProtectedLayout() {
       const updated = await plansService.updateUserPlan(user.id, planId);
       const planName = updated.Plan?.name ?? "new";
       setSuccessMessage(`You are now on the ${planName} plan!`);
+      console.log(successMessage)
       setHasPlan(true);
     } catch (err) {
       console.error("Failed to save plan", err);
       // stay open so they can retry
     }
   };
-  const handleSkipPlan = () => {
-    setHasPlan(false)
-    console.log(hasPlan)
-  }
 
   return (
     <>
       <Outlet />
-      <PlanSelectModal isOpen={hasPlan === true} onSelect={handlePlanSelect}
-      onClose={handleSkipPlan} />
-
+      <PlanSelectModal isOpen={hasPlan === true} onSelect={handlePlanSelect} />
     </>
   );
 }
