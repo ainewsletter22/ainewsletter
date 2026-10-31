@@ -902,7 +902,6 @@ export default function BrandsPage() {
                                                     await refreshActive(
                                                         activeBrand.id,
                                                     );
-                                                    console.log("savior")
                                                     alert(
                                                         "Changes saved successfully.",
 
@@ -959,6 +958,10 @@ export default function BrandsPage() {
                                                     );
                                                     await refreshActive(
                                                         activeBrand.id,
+                                                    );
+                                                    alert(
+                                                        "Changes saved successfully.",
+
                                                     );
                                                 } catch (error) {
                                                     console.error(

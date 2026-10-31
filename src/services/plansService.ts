@@ -41,6 +41,14 @@ export const plansService = {
         return response.data.data;
     },
 
+    async getUser(userId: number) {
+    const response = await apiClient.get(`/user/show/${userId}`);
+    // const response = await apiClient.get(`/user/show/3`);
+
+    return response.data.data;
+
+    },
+
     async updateUserPlan(
         userId: number | string,
         planId: number,

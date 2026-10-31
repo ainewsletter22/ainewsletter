@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import ClientDetailView from "../../components/ClientDetailView";
 import FolderTable from "../../components/FolderTable";
 import AddFolderModal from "../../components/modal/AddFolderModal";
@@ -60,6 +60,9 @@ export default function ManageClients() {
     const [clientError, setClientError] = useState("");
     const [isImporting, setIsImporting] = useState(false);
     const [isLoadingFolders, setIsLoadingFolders] = useState(true);
+    const pendingRestoreId = useRef<string | null>(
+        sessionStorage.getItem("selectedFolderId"),
+    );
 
     const fetchFolders = useCallback(async () => {
         try {
@@ -89,20 +92,22 @@ export default function ManageClients() {
             });
 
             setFolders(mapped);
-            // Restore the previously selected folder after refreshing
-            const savedFolderId = sessionStorage.getItem("selectedFolderId");
+
+            // Restore only once, on the first load after a refresh
+            const savedFolderId = pendingRestoreId.current;
+            pendingRestoreId.current = null;
 
             if (savedFolderId) {
                 const savedFolder = mapped.find(
-                    (folder) => folder.id === Number(savedFolderId),
+                    (f) => f.id === Number(savedFolderId),
                 );
-
                 if (savedFolder) {
                     setSelectedFolder(savedFolder);
-                } else {
-                    // The saved folder no longer exists
-                    sessionStorage.removeItem("selectedFolderId");
-                    setSelectedFolder(null);
+                    // re-persist in case the cleanup above cleared it (StrictMode)
+                    sessionStorage.setItem(
+                        "selectedFolderId",
+                        String(savedFolder.id),
+                    );
                 }
             }
         } catch (error) {
@@ -136,6 +141,11 @@ export default function ManageClients() {
         void loadClients();
     }, [fetchClients, selectedFolder]);
 
+    useEffect(() => {
+    return () => {
+        sessionStorage.removeItem("selectedFolderId"); //clear the key when component unmounts, (components don't unmount on refresh)
+    };
+}, []);
     const handleSaveFolder = async (name: string) => {
         setFolderError("");
         try {

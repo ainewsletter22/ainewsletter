@@ -123,6 +123,9 @@ export default function PlanSelectModal({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(false);
 
+
+
+
     useEffect(() => {
         if (!isOpen) return;
         let cancelled = false;
@@ -153,6 +156,9 @@ export default function PlanSelectModal({
         return () => {
             cancelled = true;
         };
+
+
+
     }, [isOpen]);
 
     if (!isOpen) return null;
@@ -176,9 +182,12 @@ export default function PlanSelectModal({
                     </h2>
                     {/* Plan cards */}
                     {loading && (
-                        <p className="text-center text-sm text-gray-500">
+                        <div className="flex flex-col gap-3 items-center justify-center">
+                            <p className="text-center text-sm text-gray-500">
                             Loading plans...
                         </p>
+                            <div className="h-6 w-6 animate-spin rounded-full border-3 border-blue-500 border-t-transparent"></div>
+                        </div> 
                     )}
                     {error && (
                         <p className="text-center text-sm text-red-600">
@@ -239,9 +248,9 @@ export default function PlanSelectModal({
                                     </button>
                                 </section>
                             ))}
+                            <span className="text-sm text-red-600" > Please note: you will be unable to change from your selected plan until you purchase a higher package</span>
                         </div>
                     )}
-                    <span className="text-sm text-red-600" > Please note: you will be unable to change from your selected plan until you purchase a higher package</span>
                     <br/>
                     <button
                         onClick={onClose}
