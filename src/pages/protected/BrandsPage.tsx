@@ -1069,11 +1069,7 @@ export default function BrandsPage() {
 
                                     <Accordion
                                         icon={icons.bell}
-<<<<<<< HEAD
-                                        title="Sync Management"
-=======
                                         title="Email Server Sync Management"
->>>>>>> origin/main
                                     >
                                         <ResendSyncSection
                                             brandId={activeBrand.id}
