@@ -37,7 +37,6 @@ interface Client {
     facebook?: string;
     twitter?: string;
     instagram?: string;
-    yelp?: string;
     group: "Contacted" | "Not Contacted";
     emailsSent: number;
 }
@@ -601,9 +600,7 @@ function ClientDetailView({
                                         <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">
                                             Instagram
                                         </th>
-                                        <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">
-                                            Yelp
-                                        </th>
+                                       
                                         <th className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-3 py-5 whitespace-nowrap min-w-20">
                                             Action
                                         </th>
@@ -664,10 +661,7 @@ function ClientDetailView({
                                                     val: c.instagram,
                                                     color: "bg-[rgba(222,89,107,0.18)] text-[#DE596B]",
                                                 },
-                                                {
-                                                    val: c.yelp,
-                                                    color: "bg-[rgba(250,63,63,0.18)] text-[#FA3F3F]",
-                                                },
+                                               
                                             ].map((platform, idx) => {
                                                 const hasUrl =
                                                     platform.val &&

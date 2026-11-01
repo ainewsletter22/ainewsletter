@@ -128,7 +128,7 @@ function ResultsToolbar({
 
   const filterOptions = [
     "Rating 4.4 or Less", "Status Operational", "With Website", "With Phone",
-    "With Email", "Social Media Accounts", "50 Reviews or Less", "Yelp Business"
+    "With Email", "Social Media Accounts", "50 Reviews or Less", 
   ];
   const sortOptions = ["Sort by reviews", "Sort by name", "Sort by Email"];
 
@@ -499,7 +499,6 @@ export default function FindClients() {
                    (client.facebook !== '@NONE' && client.facebook !== '') || 
                    (client.linkedin_url !== '@NONE' && client.linkedin_url !== '');
           case "50 Reviews or Less": return client.reviews <= 50;
-          case "Yelp Business": return client.yelp !== '@NONE' && client.yelp !== '';
           default: return true;
         }
       });

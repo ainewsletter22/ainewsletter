@@ -58,7 +58,6 @@ function mapLead(l: RawLead): LeadResult {
         twitter: safeStr(l.twitter_url || l.twitter || l.x_url),
         facebook: safeStr(l.facebook_url || l.facebook),
         linkedin_url: safeStr(l.linkedin_url || l.linkedin),
-        yelp: safeStr(l.yelp_url || l.yelp),
         gmbPhotos: safeStr(l.gmb_photos, "0 Photos"),
         rating: l.rating ? parseFloat(String(l.rating)) : 0,
         reviews: l.reviews_count ? Number(l.reviews_count) : 0,

@@ -10,7 +10,6 @@ interface Client {
     facebook?: string;
     twitter?: string;
     instagram?: string;
-    yelp?: string;
 }
 
 type EditClientPayload = {
@@ -22,7 +21,6 @@ type EditClientPayload = {
     facebook_url?: string;
     twitter_url?: string;
     instagram_url?: string;
-    yelp_url?: string;
 };
 
 interface EditClientModalProps {
@@ -96,7 +94,6 @@ export default function EditClientModal({
                 facebook_url: validateWebsite(formData.facebook),
                 twitter_url: validateWebsite(formData.twitter),
                 instagram_url: validateWebsite(formData.instagram),
-                yelp_url: validateWebsite(formData.yelp),
             };
             await onSave(client.id, payload);
             onClose();
@@ -219,13 +216,7 @@ export default function EditClientModal({
                                 setFormData({ ...formData, instagram: v })
                             }
                         />
-                        <Input
-                            label="Yelp URL"
-                            value={formData.yelp || ""}
-                            onChange={(v) =>
-                                setFormData({ ...formData, yelp: v })
-                            }
-                        />
+                        
                     </div>
 
                     <div className="mt-8 flex items-center justify-end gap-3">

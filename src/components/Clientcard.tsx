@@ -41,7 +41,6 @@ interface ClientData {
   twitter: string;
   facebook: string;
   linkedin_url: string;
-  yelp: string;
   gmbPhotos: string;
   reviews: number;
   businessStatus: string;
@@ -283,9 +282,7 @@ export default function ClientCard({ client, selected, onSelect }: ClientCardPro
             <InfoRow label="LinkedIn" value={client.linkedin_url} isLink />
           </div>
           <div className="hidden md:block" />
-          <div className="overflow-hidden text-ellipsis whitespace-nowrap">
-            <InfoRow label="Yelp" value={client.yelp} isLink />
-          </div>
+         
           <div className="hidden md:block" />
 
           <div className="col-span-1 md:col-span-2 flex flex-col md:flex-row gap-1.5 md:gap-6 pt-2 md:pt-1 border-t border-gray-100 mt-2 md:mt-1">

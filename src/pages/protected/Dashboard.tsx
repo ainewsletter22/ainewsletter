@@ -9,12 +9,13 @@ import { clientService } from "../../services/clientService";
 import OnboardingModal from "../../components/modal/Onboardingmodal";
 import GoalModal from "../../components/modal/Goalmodal";
 import type { OnboardingSelections } from "../../types/domain";
+import { useNavigate } from "react-router-dom";
 
 
 export default function Dashboard() {
   const user = useAuthStore((state) => state.user);
   const [stats, setStats] = useState({ total: 0, contacted: 0 });
-  
+  const navigate = useNavigate()
   const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem("ingage_onboarding_seen"));
   const [showGoal, setShowGoal] = useState(() => (
     !!localStorage.getItem("ingage_onboarding_seen") &&
@@ -98,7 +99,6 @@ export default function Dashboard() {
           <LatestClients />
           <RecentCampaigns />
         </div>
-
       </main>
 
       {/* ── Modals ── */}
@@ -112,7 +112,9 @@ export default function Dashboard() {
         isOpen={showGoal && !showOnboarding} // Ensure they don't overlap
         onClose={() => setShowGoal(false)}
         onDashboard={() => setShowGoal(false)}
-        onContinue={(goal) => handleGoalComplete(Array.isArray(goal) ? goal.map(Number) : [Number(goal)])}
+        onContinue={(goal, path) =>{ handleGoalComplete(Array.isArray(goal) ? goal.map(Number) : [Number(goal)]);
+          path? navigate(path) : setShowGoal(false) ;}
+        }
       />
     </div>
   );

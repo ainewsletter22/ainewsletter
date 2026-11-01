@@ -411,20 +411,28 @@ export default function BrandsPage() {
             const created = await brandService.createBrand(values);
             console.debug("Created brand:", created);
             // Don't rely on the create response to include the full brand payload — refresh from server
-            await fetchBrands(false);
+            // void fetchBrands(false);
             setShowCreate(false);
             if (created?.id) {
                 // Prefer the full brand from the server; fall back to the create response
-                let fullBrand: Brand;
-                try {
-                    const loaded = await brandService.getBrand(created.id);
-                    fullBrand = normalizeBrand(loaded ?? created);
-                } catch {
-                    fullBrand = normalizeBrand(created);
-                }
+                // let fullBrand: Brand;
+                // try {
+                //     const loaded = await brandService.getBrand(created.id);
+                //     fullBrand = normalizeBrand(loaded ?? created);
+                // } catch {
+                //     fullBrand = normalizeBrand(created);
+                // }
 
-                setActiveBrand(fullBrand);
+                //now populating details in the edit tab directly from the create response
+                setActiveBrand(normalizeBrand(created));
                 setActiveTab("edit");
+                setShowCreate(false);
+                //use void fetchbrands to refresh brands list in the background
+                void fetchBrands(false);
+
+                // setActiveBrand(fullBrand);
+                // setActiveTab("edit");
+                // handleOpenBrandEditor(fullBrand)
             }
         } catch (error) {
             console.error("Failed to create brand", error);
@@ -451,6 +459,7 @@ export default function BrandsPage() {
         try {
             await brandService.updateBrandIdentity(activeBrand.id, values);
             await refreshActive(activeBrand.id);
+            alert("Changes saved successfully.");
         } catch (error) {
             console.error("Failed to save brand", error);
         } finally {
@@ -815,6 +824,9 @@ export default function BrandsPage() {
                                                               }
                                                             : prev,
                                                     );
+                                                    alert(
+                                                        "Changes saved successfully.",
+                                                    );
                                                 } catch (error) {
                                                     const message =
                                                         getApiErrorMessage(
@@ -870,6 +882,10 @@ export default function BrandsPage() {
                                                     await refreshActive(
                                                         activeBrand.id,
                                                     );
+                                                    alert(
+                                                        "Changes saved successfully.",
+
+                                                    );
                                                 } catch (error) {
                                                     console.error(
                                                         "Failed to save privacy settings:",
@@ -923,6 +939,10 @@ export default function BrandsPage() {
                                                     await refreshActive(
                                                         activeBrand.id,
                                                     );
+                                                    alert(
+                                                        "Changes saved successfully.",
+
+                                                    );
                                                 } catch (error) {
                                                     console.error(
                                                         "Failed to save sending limit:",
@@ -973,6 +993,9 @@ export default function BrandsPage() {
                                                     );
                                                     await refreshActive(
                                                         activeBrand.id,
+                                                    );
+                                                    alert(
+                                                        "Changes saved successfully.",
                                                     );
                                                 } catch (error) {
                                                     console.error(

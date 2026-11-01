@@ -236,12 +236,15 @@ function BrandsTable({ brands, onView, onEdit, onDelete, onCreate }: Props) {
             </div>
 
             {remaining > 0 && (
-                <div className="mt-8 bg-gray-900 rounded-full fixed bottom-5 left-1/3 flex flex-col sm:flex-row items-center justify-center gap-3 text-white text-sm w-fit mx-auto pl-8">
-                    <span>Want to create Unlimited Brands?</span>
-                    <button className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold p-3 px-7 transition-colors rounded-full">
-                        Upgrade To Members Area
-                    </button>
-                </div>
+            <div className="fixed bottom-4 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-fit -translate-x-1/2 flex-col items-center justify-center gap-3 rounded-2xl bg-gray-900 px-3 py-3 text-center text-sm text-white shadow-lg sm:bottom-3 sm:w-auto sm:flex-row sm:gap-4 sm:rounded-full sm:pl-6 sm:pr-2 sm:py-2">
+                <span className="leading-none tracking-tight font-medium sm:leading-relaxed">
+                    Want <span className="hidden sm:inline">to create </span>Unlimited Brands?
+                </span>
+
+                <button className="cursor-pointer rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-blue-700 sm:rounded-full sm:px-7 sm:py-2 sm:text-sm sm:w-auto">
+                    Upgrade To Members Area
+                </button>
+            </div>
             )}
         </div>
     );

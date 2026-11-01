@@ -109,7 +109,7 @@ export function ResendSyncManagement({
         <div className="bg-white border border-gray-200 rounded-xl p-5">
             <div className="mb-4 flex flex-col sm:flex-row sm:items-center">
                 <div>
-                    <h3 className="text-sm font-semibold text-gray-900">
+                   <h3 className="text-sm font-semibold text-gray-900">
                         Email Server Sync Management
                     </h3>
                     <p className="text-xs text-gray-500 mt-1">
