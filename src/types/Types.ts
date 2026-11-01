@@ -156,6 +156,7 @@ export interface ComposeForm {
   attachments: ComposerAttachment[];
   footer: string;
   address: string;
+  clientCategoryIds: number[];
 }
 
 export interface ComposerAttachment {
@@ -206,7 +207,7 @@ export interface Client {
 
 // ─── Brand Types ──────────────────────────────────────────────────────────────
 
-export type DomainStatus = "Pending" | "Verified" | "Failed";
+export type DomainStatus = "not_started" | "pending" | "verified" | "partially_verified" | "partially_failed" | "failed" | "temporary_failure";
 
 export interface DNSRecord {
   type: string;

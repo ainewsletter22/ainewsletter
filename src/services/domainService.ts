@@ -1,15 +1,6 @@
 import apiClient from './apiClient';
 import type { BrandDomain } from '../types/Types';
 
-// Normalize backend domain payloads to our frontend BrandDomain shape
-function mapDomainStatus(name: string | undefined | null) {
-  const n = (name || '').toLowerCase();
-  if (n.includes('verified')) return 'Verified' as const;
-  if (n.includes('fail') || n.includes('failed')) return 'Failed' as const;
-  // treat not_started / pending / unknown as Pending
-  return 'Pending' as const;
-}
-
 function toDnsRecord(item: any) {
   if (!item) return null;
   return {
@@ -26,15 +17,20 @@ function normalizeDomain(raw: any): BrandDomain {
   if (!raw) throw new Error('Invalid domain payload');
 
   const dkimItem = Array.isArray(raw.Dkims) && raw.Dkims.length > 0 ? toDnsRecord(raw.Dkims[0]) : null;
+  // Keep all SPF records including CNAME and MX (don't filter)
   const spfItems = Array.isArray(raw.Spfs) ? raw.Spfs.map(toDnsRecord).filter(Boolean) as any[] : [];
   const dmarcItem = Array.isArray(raw.Dmarcs) && raw.Dmarcs.length > 0 ? toDnsRecord(raw.Dmarcs[0]) : null;
-  const cnameItems = Array.isArray(raw.Cnames) ? raw.Cnames.map(toDnsRecord).filter(Boolean) as any[] : [];
+  // Check for Cnames field with case variations
+  const cnameItems = Array.isArray(raw.Cnames) ? raw.Cnames.map(toDnsRecord).filter(Boolean) as any[] :
+                      Array.isArray(raw.cnames) ? raw.cnames.map(toDnsRecord).filter(Boolean) as any[] :
+                      Array.isArray(raw.Cname) ? raw.Cname.map(toDnsRecord).filter(Boolean) as any[] :
+                      Array.isArray(raw.cname) ? raw.cname.map(toDnsRecord).filter(Boolean) as any[] : [];
 
   return {
     id: raw.id,
     name: raw.name ?? raw.domain ?? '',
     region: raw.Region?.name ?? (raw.region_id ? String(raw.region_id) : ''),
-    status: mapDomainStatus(raw.DomainStatus?.name ?? raw.domain_status ?? raw.status),
+    status: raw.DomainStatus?.name ?? raw.domain_status ?? raw.status ?? 'not_started',
     addedAt: raw.createdAt ?? raw.created_at ?? new Date().toISOString(),
     enableSending: Boolean(raw.enable_sending ?? true),
     enableReceiving: Boolean(raw.enable_receiving ?? false),
@@ -92,6 +88,7 @@ export const domainService = {
   async listDomains(): Promise<BrandDomain[]> {
     const response = await apiClient.get('/domain/all');
     const raw = response.data.data || [];
+    console.log('[DomainService] Raw listDomains response:', raw);
     return (raw as any[]).map(normalizeDomain);
   },
 
@@ -102,6 +99,7 @@ export const domainService = {
   async getDomain(id: number): Promise<BrandDomain | undefined> {
     try {
       const response = await apiClient.get(`/domain/get-one/${id}`);
+      console.log('[DomainService] Raw getDomain response for ID', id, ':', response.data.data);
       return normalizeDomain(response.data.data);
     } catch (error) {
       console.error(`Failed to fetch domain ${id}:`, error);
@@ -132,11 +130,8 @@ export const domainService = {
       enable_click_tracking: payload.enable_click_tracking ?? false,
     };
 
-    console.log('[DomainService] Creating domain for brand_id:', payload.brand_id);
-    console.log('[DomainService] Domain create payload:', body);
-    console.log('[DomainService] Note: Backend will use brand\'s existing resend_api_key');
-
     const response = await apiClient.post('/domain/create', body);
+    console.log('[DomainService] Raw createDomain response:', response.data.data);
     return normalizeDomain(response.data.data);
   },
 
@@ -162,13 +157,22 @@ export const domainService = {
   },
 
   /**
+   * POST /domain/verify/:id
+   * Trigger domain verification
+   */
+  async verifyDomain(id: number): Promise<BrandDomain> {
+    const response = await apiClient.post(`/domain/verify/${id}`);
+    return normalizeDomain(response.data.data);
+  },
+
+  /**
    * POST /domain/create then wait for verification
    * Helper: Create domain and wait for DNS verification status
-   * 
+   *
    * This is a convenience wrapper. Frontend will still need to:
    * 1. Call createDomain() to get domain record with DNS info
    * 2. User copies DNS records to registrar
-   * 3. Poll getDomain() to check if status changed to "Verified"
+   * 3. Poll getDomain() to check if status changed to "verified"
    */
   async createAndPollDomain(
     payload: CreateDomainPayload,
@@ -176,15 +180,15 @@ export const domainService = {
     delayMs: number = 2000
   ): Promise<{ domain: BrandDomain; verified: boolean }> {
     const domain = await this.createDomain(payload);
-    
-    let verified = domain.status === 'Verified';
+
+    let verified = domain.status === 'verified';
     let attempts = 0;
 
     while (!verified && attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, delayMs));
       const updated = await this.getDomain(domain.id);
       if (updated) {
-        verified = updated.status === 'Verified';
+        verified = updated.status === 'verified';
         if (verified) return { domain: updated, verified: true };
       }
       attempts++;

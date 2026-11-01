@@ -38,73 +38,53 @@ function BrandIdentityForm({
         setValues((v) => ({ ...v, logo: file }));
     };
 
-    return (
+  return (
+    <div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Brand name
-                    </label>
-                    <input
-                        value={values.name}
-                        onChange={set("name")}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                        From name
-                    </label>
-                    <select
-                        value={values.fromName}
-                        onChange={(e) =>
-                            setValues((v) => ({
-                                ...v,
-                                fromName: e.target.value,
-                            }))
-                        }
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    >
-                        <option value="">Select a verified domain</option>
-                        {domains
-                            .filter((d) => d.status === "Verified")
-                            .map((domain) => (
-                                <option key={domain.id} value={domain.name}>
-                                    {domain.name}
-                                </option>
-                            ))}
-                        {/* Include current value if it's not in the verified domains list */}
-                        {values.fromName &&
-                            !domains
-                                .filter((d) => d.status === "Verified")
-                                .some((d) => d.name === values.fromName) && (
-                                <option value={values.fromName}>
-                                    {values.fromName}
-                                </option>
-                            )}
-                    </select>
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                        From email
-                    </label>
-                    <input
-                        value={values.fromEmail}
-                        onChange={set("fromEmail")}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Reply to email
-                    </label>
-                    <input
-                        value={values.replyToEmail}
-                        onChange={set("replyToEmail")}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                </div>
-                {/* <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Brand name</label>
+          <input
+            value={values.name}
+            onChange={set("name")}
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">From name</label>
+          <select
+            value={values.fromName}
+            onChange={(e) => setValues(v => ({ ...v, fromName: e.target.value }))}
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="">Select a verified domain</option>
+            {domains.filter(d => d.status === "verified").map(domain => (
+              <option key={domain.id} value={domain.name}>
+                {domain.name}
+              </option>
+            ))}
+            {/* Include current value if it's not in the verified domains list */}
+            {values.fromName && !domains.filter(d => d.status === "verified").some(d => d.name === values.fromName) && (
+              <option value={values.fromName}>{values.fromName}</option>
+            )}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">From email</label>
+          <input
+            value={values.fromEmail}
+            onChange={set("fromEmail")}
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Reply to email</label>
+          <input
+            value={values.replyToEmail}
+            onChange={set("replyToEmail")}
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        {/* <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Resend API key</label>
           <input
             value={values.resendApiKey ?? ""}

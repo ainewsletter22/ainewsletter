@@ -121,7 +121,7 @@ export const brandService = {
       id: nextDomainId++,
       name,
       region,
-      status: "Pending",
+      status: "pending",
       addedAt: "1hr Ago",
       enableSending: true,
       enableReceiving: true,
@@ -136,7 +136,7 @@ export const brandService = {
   async verifyDomain(brandId: number, domainId: number): Promise<BrandDomain | undefined> {
     BRANDS = BRANDS.map(b =>
       b.id === brandId
-        ? { ...b, domains: b.domains.map(d => (d.id === domainId ? { ...d, status: "Verified" as const } : d)) }
+        ? { ...b, domains: b.domains.map(d => (d.id === domainId ? { ...d, status: "verified" as const } : d)) }
         : b
     );
     return delay(clone(BRANDS.find(b => b.id === brandId)?.domains.find(d => d.id === domainId)));
