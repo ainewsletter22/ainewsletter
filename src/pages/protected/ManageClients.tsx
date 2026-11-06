@@ -79,21 +79,16 @@ export default function ManageClients() {
     const fetchFolders = useCallback(async () => {
         setIsLoadingFolders(true) //reload screen since brands take a while for changes to reflect
         try {
-            const [categories, stats] = await Promise.all([
-                clientService.getCategories(),
-                clientService.getSavedClients(),
-            ]);
+            const categories = await clientService.getCategories();
 
             const mapped = categories.map((f) => {
-                const count = stats.filter(
-                    (s) => Number(s.client_cat_id) === f.id,
-                ).length;
+                
                 const createdAt = f.created_at || f.createdAt;
-
+                console.log(f.client_count)
                 return {
                     id: f.id,
                     name: f.name,
-                    totalClients: count,
+                    totalClients: f.client_count ?? 0,
                     createdDate: createdAt
                         ? new Date(createdAt).toLocaleDateString("en-US", {
                               month: "2-digit",
