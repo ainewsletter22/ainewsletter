@@ -17,6 +17,7 @@ import { AIAgentFlow } from "./modal/Aiagentflow";
 import { clientService } from "../services/clientService";
 import { brandService } from "../services/brandService";
 import { domainService } from "../services/domainService";
+import { useToast } from "./modal/ToastNotification";
 
 // type ImportFlow = "idle" | "step1" | "file" | "paste" | "success";
 
@@ -80,6 +81,7 @@ function ClientDetailView({
     const exportRef = useRef<HTMLDivElement>(null);
     const clientsWithEmailCount = clients.filter((c) => c.email).length;
     const isClientsLoading = clients.length < folder.totalClients;
+    const {showToast, ToastNotification} = useToast()
 
     useEffect(() => {
         const handler = (e: MouseEvent) => {
@@ -363,7 +365,7 @@ function ClientDetailView({
             setShowExportOptions(false);
         } catch (error) {
             console.error("Export failed", error);
-            alert("Failed to export contacts. Please try again.");
+            showToast("Export failed. Please retry", "error")
         }
     };
 
@@ -854,6 +856,8 @@ function ClientDetailView({
                     </div>
                 </div>
             </div>
+                
+            <ToastNotification/>
 
             {showComposer && tempFolderId && selectedBrand && (
                 <EmailComposerModal

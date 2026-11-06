@@ -6,6 +6,7 @@ import ClientCard from "../../components/Clientcard";
 import logo from "../../assets/mainLogoNBG.png";
 import { clientService } from "../../services/clientService";
 import type { ApiListItem, Category, City, Country } from "../../types/domain";
+import { useToast } from "../../components/modal/ToastNotification";
 
 
 // ── Page state type ────────────────────────────────────────────────────────────
@@ -115,6 +116,7 @@ function ResultsToolbar({
   const filterRef = useRef<HTMLDivElement>(null);
   const sortRef = useRef<HTMLDivElement>(null);
   const saveRef = useRef<HTMLDivElement>(null);
+
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -304,6 +306,8 @@ export default function FindClients() {
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState("Sort by reviews");
   const [categories, setCategories] = useState<Category[]>([]);
+  const { showToast, ToastNotification } = useToast();
+
 
   const [meta, setMeta] = useState<{ countries: Country[]; niches: ApiListItem[] }>({ countries: [], niches: [] });
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -469,7 +473,7 @@ export default function FindClients() {
   const handleAddSelected = async (categoryId: number) => {
     try {
       await clientService.addClientsToManage(selectedIds, categoryId);
-      alert(`${selectedIds.length} clients added successfully!`);
+      showToast(`${selectedIds.length} clients added successfully!`);
       setSelectedIds([]);
     } catch (error) {
       console.error("Failed to add clients:", error);
@@ -713,6 +717,7 @@ export default function FindClients() {
                 onPageChange={setCurrentPage}
               />
             )}
+          <ToastNotification/>
           </>
         )}
 

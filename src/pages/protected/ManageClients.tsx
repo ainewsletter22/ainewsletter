@@ -17,6 +17,8 @@ import type {
     SavedClientRecord,
 } from "../../types/domain";
 import { buildClientPayloads } from "../../utils/importParser";
+import { useToast } from "../../components/modal/ToastNotification";
+import ConfirmModal from "../../components/modal/ConfirmModal";
 
 interface Folder {
     id: number;
@@ -63,8 +65,19 @@ export default function ManageClients() {
     const pendingRestoreId = useRef<string | null>(
         sessionStorage.getItem("selectedFolderId"),
     );
+    const [pendingAction, setPendingAction] = useState<{
+    title: string;
+    message: string;
+    run: () => void;
+    } | null>(null);
+
+    const confirmThen = (title: string, message: string, run: () => void) =>
+    setPendingAction({ title, message, run });
+    const { showToast, ToastNotification } = useToast();
+
 
     const fetchFolders = useCallback(async () => {
+        setIsLoadingFolders(true) //reload screen since brands take a while for changes to reflect
         try {
             const [categories, stats] = await Promise.all([
                 clientService.getCategories(),
@@ -151,12 +164,14 @@ export default function ManageClients() {
         try {
             if (editingFolder) {
                 await clientService.updateCategory(editingFolder.id, name, "");
+                showToast("updated successfully")
             } else {
                 await clientService.createCategory(name, "");
+                showToast("Folder added successfully")
             }
-            fetchFolders();
             setShowAddFolder(false);
             setEditingFolder(null);
+            fetchFolders();
         } catch (error) {
             console.error("Failed to save folder", error);
             const axiosError = error as
@@ -168,6 +183,7 @@ export default function ManageClients() {
             setFolderError(
                 serverMessage || "Failed to save folder. Please try again.",
             );
+            throw error
         }
     };
 
@@ -177,14 +193,14 @@ export default function ManageClients() {
     };
 
     const handleDeleteFolder = async (id: number) => {
-        if (!window.confirm("Are you sure you want to delete this folder?"))
-            return;
         try {
             await clientService.deleteCategory(id);
-            await fetchFolders();
+            showToast("folder deleted")
+            void fetchFolders();
             if (selectedFolder?.id === id) setSelectedFolder(null);
         } catch (error) {
             console.error("Failed to delete folder", error);
+            showToast("failed to delete", "error")
         }
     };
 
@@ -227,6 +243,7 @@ export default function ManageClients() {
             if (!createdId) throw new Error("Failed to get created client id");
 
             // Refresh UI and close modal only on success
+            showToast("Client added")
             fetchClients(selectedFolder.id);
             setFolders((prev) =>
                 prev.map((folder) =>
@@ -265,15 +282,22 @@ export default function ManageClients() {
         id: number,
         payload: ClientUpdatePayload,
     ) => {
-        await clientService.updateClient(id, payload);
-        if (selectedFolder) {
-            fetchClients(selectedFolder.id);
+        try {
+            await clientService.updateClient(id, payload);
+
+            if (selectedFolder) {
+                await fetchClients(selectedFolder.id);
+            }
+
+            showToast("Updated successfully!");
+        } catch (error) {
+            console.error("Failed to update client", error);
+            showToast("Failed to update client", "error");
+            throw error;
         }
     };
 
     const handleDeleteClient = async (id: number) => {
-        if (!window.confirm("Are you sure you want to delete this client?"))
-            return;
         try {
             await clientService.deleteClient(id);
             setClients((prev) => prev.filter((client) => client.id !== id));
@@ -294,8 +318,10 @@ export default function ManageClients() {
                         : folder,
                 );
             }
+            showToast("deleted successfully")
         } catch (error) {
             console.error("Failed to delete client", error);
+            showToast("Failed to delete client, retry", "error")
         }
     };
 
@@ -380,7 +406,7 @@ export default function ManageClients() {
 
         if (duplicates.length > 0) {
             setIsImporting(false);
-            alert(
+            showToast(
                 `${duplicates.length} client(s) skipped due to duplicate emails in this folder: ${duplicates.slice(0, 5).join(", ")}${duplicates.length > 5 ? "..." : ""}`,
             );
             if (filteredClients.length === 0) return;
@@ -405,8 +431,8 @@ export default function ManageClients() {
                 "Failed to import contacts",
                 axiosError?.response?.data || error,
             );
-            alert(
-                `Failed to import contacts: ${serverMessage || "Please check your data and try again."}`,
+            showToast(
+                `Failed to import contacts: ${serverMessage || "Please check your data and try again."} `, "error"
             );
         }
     };
@@ -414,6 +440,8 @@ export default function ManageClients() {
     return (
         <>
             <DashboardHeader />
+
+            <ToastNotification/>
 
             {isLoadingFolders ? (
                 <div className="min-h-screen flex items-center justify-center px-4 py-8">
@@ -433,7 +461,13 @@ export default function ManageClients() {
                         setIsImporting(true);
                     }}
                     isImporting={isImporting}
-                    onDeleteClient={handleDeleteClient}
+                    onDeleteClient={(id) =>
+                        confirmThen(
+                            "Delete client?",
+                            "This client will be permanently deleted.",
+                            () => handleDeleteClient(id),
+                        )
+                    }
                     onUpdateClient={handleUpdateClient}
                 />
             ) : (
@@ -447,7 +481,13 @@ export default function ManageClients() {
                         );
                     }}
                     onEdit={handleEditFolder}
-                    onDelete={handleDeleteFolder}
+                    onDelete={(id) =>
+                        confirmThen(
+                            "Delete folder?",
+                            "This folder will be permanently deleted.",
+                            () => handleDeleteFolder(id),
+                        )
+                    }
                     onAddFolder={() => setShowAddFolder(true)}
                 />
             )}
@@ -544,6 +584,17 @@ export default function ManageClients() {
                     }}
                 />
             )}
+        
+            <ConfirmModal
+            isOpen={!!pendingAction}
+            title={pendingAction?.title ?? ""}
+            message={pendingAction?.message ?? ""}
+            onConfirm={() => {
+                pendingAction?.run();
+                setPendingAction(null);
+            }}
+            onCancel={() => setPendingAction(null)}
+            />
         </>
     );
 }

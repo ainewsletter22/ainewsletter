@@ -62,6 +62,7 @@ export default function EditClientModal({
 }: EditClientModalProps) {
     const [formData, setFormData] = useState({ ...client });
     const [loading, setLoading] = useState(false);
+    const [formError, setFormError] = useState("")
 
     //this tests if the url starts with http:// or https:// and injects https:// if it doesn't
     const validateWebsite = (url: string | undefined) => {
@@ -104,14 +105,11 @@ export default function EditClientModal({
             const serverMessage =
                 axiosError?.response?.data?.message ||
                 axiosError?.response?.data?.error;
-
             console.error(
-                "Update failed detail:",
+                `Update failed: ${serverMessage}`,
                 axiosError?.response?.data || error,
             );
-            alert(
-                `Failed to update: ${serverMessage || "Check console for validation errors"}`,
-            );
+            setFormError(`${serverMessage}`)
         } finally {
             setLoading(false);
         }
@@ -219,6 +217,11 @@ export default function EditClientModal({
                         
                     </div>
 
+                        {formError &&
+                        <span className="text-sm text-red-600 font-semibold">
+                            {formError}
+                        </span>
+                        }
                     <div className="mt-8 flex items-center justify-end gap-3">
                         <button
                             type="button"

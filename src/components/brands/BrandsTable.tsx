@@ -236,7 +236,7 @@ function BrandsTable({ brands, onView, onEdit, onDelete, onCreate }: Props) {
             </div>
 
             {remaining > 0 && (
-            <div className="fixed bottom-4 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-fit -translate-x-1/2 flex-col items-center justify-center gap-3 rounded-2xl bg-gray-900 px-3 py-3 text-center text-sm text-white shadow-lg sm:bottom-3 sm:w-auto sm:flex-row sm:gap-4 sm:rounded-full sm:pl-6 sm:pr-2 sm:py-2">
+            <div className="fixed bottom-4 left-1/2 z-45 flex w-[calc(100%-2rem)] max-w-fit -translate-x-1/2 flex-col items-center justify-center gap-3 rounded-2xl bg-gray-900 px-3 py-3 text-center text-sm text-white shadow-lg sm:bottom-3 sm:w-auto sm:flex-row sm:gap-4 sm:rounded-full sm:pl-6 sm:pr-2 sm:py-2">
                 <span className="leading-none tracking-tight font-medium sm:leading-relaxed">
                     Want <span className="hidden sm:inline">to create </span>Unlimited Brands?
                 </span>

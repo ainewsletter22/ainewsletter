@@ -122,11 +122,11 @@ function AddClientModal({
                         />
                     </div>
                 </div>
-                {error || externalError ? (
-                    <div className="mb-4 text-sm text-red-600">
+                    {(error || externalError) && (
+                        <p className="mb-4 text-sm text-red-600">
                         {error || externalError}
-                    </div>
-                ) : null}
+                        </p>
+                    )}
                 <button
                     onClick={handleSave}
                     className="bg-[#337DD3] hover:bg-[#0a65cd] text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors"

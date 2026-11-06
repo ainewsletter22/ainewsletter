@@ -72,7 +72,7 @@ export default function GoalModal({ isOpen, onClose, onContinue, onDashboard }: 
         {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
         >
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
             <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -80,7 +80,7 @@ export default function GoalModal({ isOpen, onClose, onContinue, onDashboard }: 
         </button>
 
         {/* Robot icon */}
-        <div className="flex justify-center mb-3">
+        <div className="flex justify-center mb-3 ">
           <div className="items-center justify-center">
             <img src={bot} className="bg-cover w-24" height="auto"  alt="" />
             
@@ -99,12 +99,12 @@ export default function GoalModal({ isOpen, onClose, onContinue, onDashboard }: 
                 key={goal.id}
                 onClick={() => {setSelected(goal.id);
                 }}
-                className={`flex flex-col items-center text-center p-4 rounded-xl border-2 transition-all ${
+                className={`flex flex-col items-center text-center p-4 rounded-xl border-2 transition-all cursor-pointer ${
                   selected === goal.id
                     ? "border-blue-500 bg-blue-50"
                     : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
                 }`}
-              >
+                >
                 <img src={goal.icon} className="mb-3 w-20" height="auto" alt="" />
                 <p
                   className={`text-sm font-semibold mb-1.5 ${
@@ -123,18 +123,18 @@ export default function GoalModal({ isOpen, onClose, onContinue, onDashboard }: 
         <div className="flex items-center justify-center gap-3">
           <button
             onClick={() => {
-    const selectedGoal = backendGoals.find((g) => g.id === selected);
-    if (!selectedGoal) return;
-    onContinue(selectedGoal.id, selectedGoal.path);
-  }}
-            className="px-8 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg text-sm transition-colors flex items-center gap-2"
-          >
+              const selectedGoal = backendGoals.find((g) => g.id === selected);
+              if (!selectedGoal) return;
+              onContinue(selectedGoal.id, selectedGoal.path);
+            }}
+            className="px-8 py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg text-sm transition-colors flex items-center gap-2 cursor-pointer"
+            >
             Continue <span className="text-base">→</span>
           </button>
           <button
             onClick={onDashboard}
-            className="px-6 py-2.5 border border-gray-300 text-gray-700 font-semibold rounded-lg text-sm hover:bg-gray-50 transition-colors"
-          >
+            className="px-6 py-2.5 border border-gray-300 text-gray-700 font-semibold rounded-lg text-sm hover:bg-gray-50 transition-colors cursor-pointer"
+            >
             Go to Dashboard
           </button>
         </div>

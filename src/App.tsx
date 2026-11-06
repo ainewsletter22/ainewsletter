@@ -17,6 +17,7 @@ import PublicRoute from './components/PublicRoute';
 import { useEffect } from 'react';
 import { useAuthStore } from './store/useAuthStore';
 import { loadPersistedAuth } from './services/authService';
+import ProtectedLayout from './components/ProtectedLayout';
 
 function App() {
   const setInitialized = useAuthStore((s) => s.setInitialized);
@@ -51,9 +52,11 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/find-clients" element={<FindClients />} />
           <Route path="/manage-clients" element={<ManageClients />} />
-          <Route path="/news-letter" element={<Navigate to="/news-letter/brands" replace />} />
-          <Route path="/news-letter/brands" element={<BrandsPage />} />
-          <Route path="/news-letter/brands/:brandId" element={<SendAINewsletterPage />} />
+          <Route element={<ProtectedLayout/>}>
+            <Route path="/news-letter" element={<Navigate to="/news-letter/brands" replace />} />
+            <Route path="/news-letter/brands" element={<BrandsPage />} />
+            <Route path="/news-letter/brands/:brandId" element={<SendAINewsletterPage />} />
+          </Route>
           <Route path="/account-review" element={<AccountReviewPage />} />
           <Route path="/submission-review" element={<SubmissionReviewPage />} />
           <Route path="/search-history" element={<SearchHistory />} />

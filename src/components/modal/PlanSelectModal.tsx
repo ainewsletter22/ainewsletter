@@ -5,6 +5,9 @@ interface PlanSelectionModalProps {
     isOpen?: boolean;
     onClose?: () => void;
     onSelect?: (planId: number) => void;
+    successMessage?: string | null;
+    selectErrorMessage?: string | null;
+    selectingPlanId?: number | null;
 }
 
 interface PlanDetails {
@@ -118,13 +121,17 @@ export default function PlanSelectModal({
     isOpen = false,
     onClose,
     onSelect,
+    successMessage,
+    selectErrorMessage,
+    selectingPlanId,
 }: PlanSelectionModalProps) {
     const [plans, setPlans] = useState<DisplayPlan[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
 
-
-
+    useEffect(() => {
+        console.log(selectingPlanId);
+    }, [selectingPlanId]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -156,9 +163,6 @@ export default function PlanSelectModal({
         return () => {
             cancelled = true;
         };
-
-
-
     }, [isOpen]);
 
     if (!isOpen) return null;
@@ -166,101 +170,159 @@ export default function PlanSelectModal({
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 sm:p-5">
             {/* Modal */}
-            <div className="relative z-10 my-auto max-h-[95dvh] w-full max-w-5xl bg-white shadow-2xl sm:rounded-3xl px-0 py-0 overflow-hidden ">
+            <div className="relative z-10 my-auto max-h-[95dvh] w-full max-w-5xl bg-white shadow-2xl sm:rounded-3xl px-0 py-0 overflow-hidden">
                 <div
                     role="dialog"
                     aria-modal="true"
                     aria-labelledby="plan-modal-title"
                     className="relative z-10 my-auto max-h-[95dvh] w-full max-w-5xl overflow-y-auto scrollbar-thin rounded-2xl bg-white px-4 py-8 shadow-2xl sm:rounded-3xl sm:px-8 sm:py-10 md:px-12"
                 >
-                    {/* Heading */}
-                    <h2
-                        id="plan-modal-title"
-                        className="mb-7 px-5 text-center text-xl font-bold leading-tight tracking-tight text-black sm:mb-9 sm:text-2xl md:mb-11 md:text-3xl lg:text-4xl"
-                    >
-                        Select your preferred plan
-                    </h2>
-                    {/* Plan cards */}
-                    {loading && (
-                        <div className="flex flex-col gap-3 items-center justify-center">
-                            <p className="text-center text-sm text-gray-500">
-                            Loading plans...
-                        </p>
-                            <div className="h-6 w-6 animate-spin rounded-full border-3 border-blue-500 border-t-transparent"></div>
-                        </div> 
-                    )}
-                    {error && (
-                        <p className="text-center text-sm text-red-600">
-                            Could not load plans. Please check your connection
-                            and try again.
-                        </p>
-                    )}
+                    {successMessage ? (
+                        <div className="flex flex-col items-center gap-5 py-10 text-center">
+                            <h2
+                                id="plan-modal-title"
+                                role="status"
+                                className="text-2xl font-bold text-black"
+                            >
+                                {successMessage}
+                            </h2>
 
-                    {!loading && !error && (
-                        <div className="mx-auto grid max-w-4xl grid-cols-1 items-stretch gap-5 sm:gap-6 md:grid-cols-2 md:gap-5 lg:gap-8">
-                            {plans.map((plan) => (
-                                <section
-                                    key={plan.id}
-                                    className={`group flex min-w-0 flex-col rounded-xl border p-4 transition-colors duration-200 sm:rounded-2xl sm:p-5 lg:p-6 ${
-                                        plan.featured
-                                            ? "border-transparent bg-blue-50 hover:border-blue-500"
-                                            : "border-transparent bg-gray-100 hover:border-blue-500"
-                                    }`}
-                                >
-                                    {/* Plan name */}
-                                    <div className="mb-4 sm:mb-5">
-                                        <span
-                                            className={`inline-flex max-w-full items-center rounded-full border px-4 py-2 text-xs font-medium sm:px-5 sm:text-sm ${
-                                                plan.featured
-                                                    ? "border-blue-600 bg-blue-600 text-white"
-                                                    : "border-blue-600 bg-white text-blue-600"
-                                            }`}
-                                        >
-                                            {plan.name} Email
-                                        </span>
-                                    </div>
-                                    {/* Title */}
-                                    <h3 className="mb-2 text-xl font-bold leading-tight text-blue-600 sm:text-2xl lg:text-[28px]">
-                                        {plan.title}
-                                    </h3>
-                                    {/* Description */}
-                                    <p className="mb-5 text-xs leading-5 text-gray-600 sm:mb-6 sm:text-sm">
-                                        {plan.description}
-                                    </p>
-                                    {/* Features */}
-                                    <div className="mb-6 flex-1 sm:mb-7">
-                                        <FeatureList items={plan.features} />
-                                    </div>
-                                    {/* CTA */}
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            onSelect?.(plan.id);
-                                        }}
-                                        className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-full px-4 py-2.5 text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 sm:min-h-12 sm:px-5 sm:text-base cursor-pointer ${
-                                            plan.featured
-                                                ? "bg-black hover:bg-gray-800"
-                                                : "bg-blue-600 hover:bg-blue-700"
-                                        }`}
-                                    >
-                                        <span >Get Started</span>
-                                        <ArrowIcon />
-                                    </button>
-                                </section>
-                            ))}
-                            <span className="text-sm text-red-600" > Please note: you will be unable to change from your selected plan until you purchase a higher package</span>
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="rounded-full bg-blue-600 px-8 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 cursor-pointer"
+                            >
+                                Continue
+                            </button>
                         </div>
+                    ) : (
+                        <>
+                            {loading && (
+                                <div className="flex flex-col gap-3 items-center justify-center">
+                                    <p className="text-center text-sm text-gray-500">
+                                        Loading plans...
+                                    </p>
+                                    <div className="h-6 w-6 animate-spin rounded-full border-3 border-blue-500 border-t-transparent"></div>
+                                </div>
+                            )}
+
+                            {error && (
+                                <p className="text-center text-sm text-red-600">
+                                    Could not load plans. Please check your
+                                    connection and try again.
+                                </p>
+                            )}
+
+                            {!loading && !error && (
+                                <>
+                                    {/* Heading */}
+                                    <h2
+                                        id="plan-modal-title"
+                                        className="mb-7 px-5 text-center text-xl font-bold leading-tight tracking-tight text-black sm:mb-9 sm:text-2xl md:mb-11 md:text-3xl lg:text-4xl"
+                                    >
+                                        Select your preferred plan
+                                    </h2>
+
+                                    {/* Plan cards */}
+                                    <div className="mx-auto grid max-w-4xl grid-cols-1 items-stretch gap-5 sm:gap-6 md:grid-cols-2 md:gap-5 lg:gap-8">
+                                        {plans.map((plan) => (
+                                            <section
+                                                key={plan.id}
+                                                className={`group flex min-w-0 flex-col rounded-xl border p-4 transition-colors duration-200 sm:rounded-2xl sm:p-5 lg:p-6 ${
+                                                    plan.featured
+                                                        ? "border-transparent bg-blue-50 hover:border-blue-500"
+                                                        : "border-transparent bg-gray-100 hover:border-blue-500"
+                                                }`}
+                                            >
+                                                {/* Plan name */}
+                                                <div className="mb-4 sm:mb-5">
+                                                    <span
+                                                        className={`inline-flex max-w-full items-center rounded-full border px-4 py-2 text-xs font-medium sm:px-5 sm:text-sm ${
+                                                            plan.featured
+                                                                ? "border-blue-600 bg-blue-600 text-white"
+                                                                : "border-blue-600 bg-white text-blue-600"
+                                                        }`}
+                                                    >
+                                                        {plan.name} Email
+                                                    </span>
+                                                </div>
+
+                                                {/* Title */}
+                                                <h3 className="mb-2 text-xl font-bold leading-tight text-blue-600 sm:text-2xl lg:text-[28px]">
+                                                    {plan.title}
+                                                </h3>
+
+                                                {/* Description */}
+                                                <p className="mb-5 text-xs leading-5 text-gray-600 sm:mb-6 sm:text-sm">
+                                                    {plan.description}
+                                                </p>
+
+                                                {/* Features */}
+                                                <div className="mb-6 flex-1 sm:mb-7">
+                                                    <FeatureList
+                                                        items={plan.features}
+                                                    />
+                                                </div>
+                                                <span className="text-sm text-red-600 my-2">
+                                                    {selectErrorMessage}
+                                                </span>
+                                                {/* CTA */}
+                                                <button
+                                                    type="button"
+                                                    disabled={
+                                                        selectingPlanId !== null
+                                                    }
+                                                    onClick={() => {
+                                                        // setSelectingPlanId(plan.id);
+                                                        console.log(
+                                                            selectingPlanId,
+                                                        );
+                                                        onSelect?.(plan.id);
+                                                    }}
+                                                    className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-full px-4 py-2.5 text-sm font-semibold text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 sm:min-h-12 sm:px-5 sm:text-base cursor-pointer disabled:cursor-not-allowed disabled:opacity-70 ${
+                                                        plan.featured
+                                                            ? "bg-black hover:bg-gray-800"
+                                                            : "bg-blue-600 hover:bg-blue-700"
+                                                    }`}
+                                                >
+                                                    <span>
+                                                        {selectingPlanId ===
+                                                        plan.id
+                                                            ? "Selecting plan..."
+                                                            : "Get Started"}
+                                                    </span>
+
+                                                    {selectingPlanId ===
+                                                    plan.id ? (
+                                                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                                    ) : (
+                                                        <ArrowIcon />
+                                                    )}
+                                                </button>
+                                            </section>
+                                        ))}
+                                    </div>
+
+                                    <span className="text-sm text-red-600">
+                                        Please note: you will be unable to
+                                        change from your selected plan until you
+                                        purchase a higher package
+                                    </span>
+                                </>
+                            )}
+
+                            <br />
+
+                            {/* <button
+                            onClick={onClose}
+                            className="whitespace-pre-line"
+                        >
+                            skip
+                        </button> */}
+                        </>
                     )}
-                    <br/>
-                    <button
-                        onClick={onClose}
-                        className="whitespace-pre-line"
-                    >
-                        skip
-                    </button>
                 </div>
             </div>
         </div>
-        // </div>
     );
 }

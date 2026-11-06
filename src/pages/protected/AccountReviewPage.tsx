@@ -21,6 +21,7 @@ export default function AccountReviewPage() {
     const [emailTypes, setEmailTypes] = useState<EmailType[]>([]);
     const [usageExplanation, setUsageExplanation] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [formError, setFormError] = useState("")
 
     const toggleEmailType = (type: EmailType) => {
         setEmailTypes((prev) =>
@@ -39,9 +40,11 @@ export default function AccountReviewPage() {
             emailTypes.length === 0 ||
             !usageExplanation.trim()
         ) {
-            alert("Please fill all fields before submitting the form.");
             setIsSubmitting(false);
+            setFormError("Please fill all fields before submitting the form.");
             return;
+        }else{
+            setFormError("")
         }
         try {
             await appealService.createAccountReviewAppeal({
@@ -164,7 +167,6 @@ export default function AccountReviewPage() {
                                 ))}
                             </div>
                         </div>
-
                         <div>
                             <label className="mb-2 block text-sm font-medium text-gray-700">
                                 Explain how you plan to use AI Newsletter
@@ -181,7 +183,7 @@ export default function AccountReviewPage() {
                             />
                         </div>
                     </div>
-
+                    {formError && <span className="text-red-600">{formError}</span>}
                     <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                         <button
                             type="button"

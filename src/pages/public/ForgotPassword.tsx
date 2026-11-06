@@ -7,6 +7,7 @@ import view from "../../assets/transparency.svg";
 import unview from "../../assets/noTransparency.svg";
 import forgotImg from "../../assets/forgotPasswordHero.svg"; // the right-hand promo image (same across steps 1–3)
 import { authService } from "../../services/authService";
+import { useToast } from "../../components/modal/ToastNotification";
 
 // Lock icon — reused across all steps
 function LockIcon() {
@@ -54,6 +55,7 @@ function ForgotPassword() {
     const [confirmPassword, setConfirmPassword] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
+    const {showToast, ToastNotification} = useToast()
 
     const isLastStep = step === 4;
 
@@ -78,7 +80,7 @@ function ForgotPassword() {
     const handleResend = async () => {
         try {
             await authService.forgotPassword(emailVal);
-            alert("Reset link resent!");
+            showToast("Reset link resent!");
         } catch (err: unknown) {
             console.error(err);
         }
@@ -108,6 +110,9 @@ function ForgotPassword() {
 
     return (
         <div className="h-screen bg-blue-50 flex flex-col">
+
+            <ToastNotification/> //toast
+            
             {/* ── Header ── */}
             <header
                 className={`px-8 pt-20 flex ${isLastStep ? "justify-center" : "justify-start"}`}

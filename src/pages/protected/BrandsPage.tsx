@@ -28,6 +28,8 @@ import { CreateBrandModal } from "../../components/modal/CreateBrandModal";
 import { UsageSection } from "../../components/brands/UsageSection";
 import { BillingSection } from "../../components/brands/Billingsection";
 import { PricingModal } from "../../components/brands/Pricingmodal";
+import {useToast} from "../../components/modal/ToastNotification";
+import ConfirmModal from "../../components/modal/ConfirmModal";
 
 type SavingSection =
     | "identity"
@@ -74,6 +76,18 @@ export default function BrandsPage() {
     const [pricingPlanType, setPricingPlanType] = useState<
         "transactional" | "marketing" | null
     >(null);
+
+    const [pendingAction, setPendingAction] = useState<{
+    title: string;
+    message: string;
+    run: () => void;
+    } | null>(null);
+
+    const confirmThen = (title: string, message: string, run: () => void) =>
+    setPendingAction({ title, message, run });
+
+    const { showToast, ToastNotification } = useToast();
+    const [backendError, setBackendError] = useState<string | null>(null);
 
     useEffect(() => {
         const init = async () => {
@@ -433,23 +447,53 @@ export default function BrandsPage() {
                 // setActiveBrand(fullBrand);
                 // setActiveTab("edit");
                 // handleOpenBrandEditor(fullBrand)
+                showToast("Brand created successfully!");
             }
-        } catch (error) {
+        } catch (error: unknown) {
             console.error("Failed to create brand", error);
+
+            if (
+                typeof error === "object" &&
+                error !== null &&
+                "response" in error
+            ) {
+                const response = error.response as {
+                    status?: number;
+                    data?: { message?: string };
+                };
+
+                if (response.status === 409 || response.status === 400) {
+                    setBackendError(
+                        response.data?.message || "Please check your input and retry.",
+                    );
+                } else {
+                    showToast(
+                        "Something went wrong. Please try again.",
+                        "error",
+                    );
+                }
+            } else {
+                showToast(
+                    "Something went wrong. Please check your connection and try again.",
+                    "error",
+                );
+            }
         } finally {
             setCreating(false);
         }
     };
 
     const handleDeleteBrand = async (id: number) => {
-        if (!window.confirm("Are you sure you want to delete this brand?"))
-            return;
+        // if (!window.confirm("Are you sure you want to delete this brand?"))
+        //     return;
         try {
             await brandService.deleteBrand(id);
             setBrands((prev) => prev.filter((b) => b.id !== id));
             if (activeBrand?.id === id) setActiveBrand(null);
+            showToast("deleted successfully!");
         } catch (error) {
             console.error("Failed to delete brand", error);
+            showToast("Failed to delete.", "error");
         }
     };
 
@@ -459,8 +503,9 @@ export default function BrandsPage() {
         try {
             await brandService.updateBrandIdentity(activeBrand.id, values);
             await refreshActive(activeBrand.id);
-            alert("Changes saved successfully.");
+            showToast("Brand updated successfully!");
         } catch (error) {
+            showToast("Failed to update brand.", "error");
             console.error("Failed to save brand", error);
         } finally {
             setSavingSection(null);
@@ -511,7 +556,13 @@ export default function BrandsPage() {
                     brands={brands}
                     onView={handleOpenBrandWorkspace}
                     onEdit={handleOpenBrandEditor}
-                    onDelete={handleDeleteBrand}
+                    onDelete={(id) =>
+                        confirmThen(
+                            "Delete brand?",
+                            "This brand will be permanently deleted.",
+                            () => handleDeleteBrand(id),
+                        )
+                    }
                     onCreate={() => setShowCreate(true)}
                 />
             ) : (
@@ -598,6 +649,7 @@ export default function BrandsPage() {
                                                     await refreshActive(
                                                         activeBrand.id,
                                                     );
+                                                    showToast("Domain added!");
                                                     return domain;
                                                 } catch (error) {
                                                     const message =
@@ -610,6 +662,7 @@ export default function BrandsPage() {
                                                         message,
                                                         error,
                                                     );
+                                                    showToast("Failed to add domain.", "error");
                                                     throw new Error(message);
                                                 } finally {
                                                     setSavingSection(null);
@@ -656,11 +709,13 @@ export default function BrandsPage() {
                                                         );
                                                         // Domain is already removed from local state, so this is okay
                                                     }
+                                                    showToast("Domain deleted successfully!");
                                                 } catch (error) {
                                                     console.error(
                                                         "Failed to delete domain:",
                                                         error,
                                                     );
+                                                    showToast("Failed to delete domain", "error");
                                                 } finally {
                                                     setSavingSection(null);
                                                 }
@@ -712,6 +767,7 @@ export default function BrandsPage() {
                                                         "Failed to verify domain:",
                                                         error,
                                                     );
+                                                    showToast("Domain verification failed", "error")
                                                     // If verification fails, try refreshing the whole brand
                                                     try {
                                                         await refreshActive(
@@ -882,15 +938,13 @@ export default function BrandsPage() {
                                                     await refreshActive(
                                                         activeBrand.id,
                                                     );
-                                                    alert(
-                                                        "Changes saved successfully.",
-
-                                                    );
+                                                    showToast("settings saved successfully!");
                                                 } catch (error) {
                                                     console.error(
                                                         "Failed to save privacy settings:",
                                                         error,
                                                     );
+                                                    showToast("Failed to save changes.", "error");
                                                 } finally {
                                                     setSavingSection(null);
                                                 }
@@ -939,15 +993,13 @@ export default function BrandsPage() {
                                                     await refreshActive(
                                                         activeBrand.id,
                                                     );
-                                                    alert(
-                                                        "Changes saved successfully.",
-
-                                                    );
+                                                    showToast("settings saved successfully!");
                                                 } catch (error) {
                                                     console.error(
                                                         "Failed to save sending limit:",
                                                         error,
                                                     );
+                                                    showToast("Failed to save changes.", "error");
                                                 } finally {
                                                     setSavingSection(null);
                                                 }
@@ -994,14 +1046,13 @@ export default function BrandsPage() {
                                                     await refreshActive(
                                                         activeBrand.id,
                                                     );
-                                                    alert(
-                                                        "Changes saved successfully.",
-                                                    );
+                                                    showToast("Settings saved successfully!");
                                                 } catch (error) {
                                                     console.error(
                                                         "Failed to save footer settings:",
                                                         error,
                                                     );
+                                                    showToast("Failed to save changes.", "error");
                                                 } finally {
                                                     setSavingSection(null);
                                                 }
@@ -1130,8 +1181,22 @@ export default function BrandsPage() {
                     onClose={() => setShowCreate(false)}
                     onCreate={handleCreateBrand}
                     creating={creating}
+                    backendError={backendError}
                 />
             )}
+
+            <ToastNotification/>
+
+             <ConfirmModal
+            isOpen={!!pendingAction}
+            title={pendingAction?.title ?? ""}
+            message={pendingAction?.message ?? ""}
+            onConfirm={() => {
+                pendingAction?.run();
+                setPendingAction(null);
+            }}
+            onCancel={() => setPendingAction(null)}
+            />
 
             {pricingPlanType && (
                 <PricingModal
